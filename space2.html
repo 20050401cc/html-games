@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🌌 星际虫洞</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#0ff;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #2a3a4a;border-radius:8px;box-shadow:0 0 30px rgba(0,255,255,0.1)}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#0ff;border:1px solid #2a3a4a;border-radius:6px;cursor:pointer;font-size:12px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#0ff;color:#111;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🌌 星际虫洞</h1>
+<div id="info">
+  <div>分数: <span class="val" id="score">0</span></div>
+  <div>波次: <span class="val" id="wave">1</span></div>
+  <div>生命: <span class="val" id="hp">5</span></div>
+</div>
+<canvas id="game"></canvas>
+<div id="controls">
+  <button onclick="newGame()">新游戏</button>
+</div>
+<div id="overlay">
+  <h2 id="olTitle">💀 飞船被毁！</h2>
+  <p id="olMsg"></p>
+  <button onclick="newGame()">再来一次</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=500,H=500;
+canvas.width=W;canvas.height=H;
+
+let ship,bullets,asteroids,pickups,particles,score,wave,hp,alive,shootCD,waveTimer;
+
+function newGame(){
+  ship={x:W/2,y:H-60,w:30,h:20,vx:0};
+  bullets=[];asteroids=[];pickups=[];particles=[];
+  score=0;wave=1;hp=5;alive=true;shootCD=0;waveTimer=0;
+  spawnWave();
+  document.getElementById('overlay').classList.remove('show');
+  updateInfo();render();
+}
+
+function spawnWave(){
+  const count=3+wave*2;
+  for(let i=0;i<count;i++){
+    asteroids.push({
+      x:Math.random()*W,y:-20-Math.random()*200,
+      r:10+Math.random()*20,
+      vx:(Math.random()-0.5)*2,
+      vy:0.5+Math.random()*1.5+wave*0.1,
+      hp:Math.ceil(wave/2),
+      color:hsl(wave*30+Math.random()*60,70,50),
+    });
+  }
+  // chance for pickup
+  if(Math.random()<0.3){
+    pickups.push({x:50+Math.random()*(W-100),y:-20,type:Math.random()<0.5?'heal':'rapid',vy:1.5});
+  }
+}
+
+function hsl(h,s,l){return`hsl(${h},${s}%,${l}%)`}
+
+function update(){
+  if(!alive)return;
+  // ship movement
+  ship.x+=ship.vx;
+  ship.x=Math.max(ship.w/2,Math.min(W-ship.w/2,ship.x));
+  // auto shoot
+  shootCD--;
+  if(shootCD<=0){
+    bullets.push({x:ship.x,y:ship.y-10,vy:-8});
+    bullets.push({x:ship.x-8,y:ship.y-5,vy:-7,vx:-0.5});
+    bullets.push({x:ship.x+8,y:ship.y-5,vy:-7,vx:0.5});
+    shootCD=8;
+  }
+  // update bullets
+  for(let i=bullets.length-1;i>=0;i--){
+    const b=bullets[i];
+    b.y+=b.vy;if(b.vx)b.x+=b.vx;
+    if(b.y<-10||b.x<-10||b.x>W+10){bullets.splice(i,1);continue}
+    // hit asteroids
+    for(let j=asteroids.length-1;j>=0;j--){
+      const a=asteroids[j];
+      if(Math.sqrt((b.x-a.x)**2+(b.y-a.y)**2)<a.r){
+        a.hp--;bullets.splice(i,1);
+        spawnParticles(a.x,a.y,a.color,3);
+        if(a.hp<=0){
+          score+=10*a.r;
+          spawnParticles(a.x,a.y,a.color,12);
+          asteroids.splice(j,1);
+        }
+        break;
+      }
+    }
+  }
+  // update asteroids
+  for(let i=asteroids.length-1;i>=0;i--){
+    const a=asteroids[i];
+    a.x+=a.vx;a.y+=a.vy;
+    if(a.y>H+50){asteroids.splice(i,1);continue}
+    // hit ship
+    if(Math.sqrt((a.x-ship.x)**2+(a.y-ship.y)**2)<a.r+10){
+      hp--;asteroids.splice(i,1);
+      spawnParticles(ship.x,ship.y,'#f55',10);
+      if(hp<=0){alive=false;gameOver();return}
+    }
+  }
+  // pickups
+  for(let i=pickups.length-1;i>=0;i--){
+    const p=pickups[i];
+    p.y+=p.vy;
+    if(p.y>H+20){pickups.splice(i,1);continue}
+    if(Math.sqrt((p.x-ship.x)**2+(p.y-ship.y)**2)<20){
+      if(p.type==='heal')hp=Math.min(10,hp+2);
+      else shootCD=Math.max(2,shootCD-3);
+      spawnParticles(p.x,p.y,'#ffd700',8);
+      pickups.splice(i,1);
+    }
+  }
+  // particles
+  for(let i=particles.length-1;i>=0;i--){
+    particles[i].x+=particles[i].dx;particles[i].y+=particles[i].dy;particles[i].life--;
+    if(particles[i].life<=0)particles.splice(i,1);
+  }
+  // wave complete
+  if(asteroids.length===0){
+    wave++;score+=wave*50;spawnWave();
+  }
+  updateInfo();
+}
+
+function render(){
+  ctx.fillStyle='rgba(10,10,20,0.3)';ctx.fillRect(0,0,W,H);
+  // stars
+  for(let i=0;i<30;i++){
+    ctx.fillStyle=`rgba(255,255,255,${Math.random()*0.3})`;
+    ctx.fillRect(Math.random()*W,Math.random()*H,1,1);
+  }
+  // asteroids
+  for(const a of asteroids){
+    ctx.fillStyle=a.color;
+    ctx.beginPath();
+    for(let i=0;i<8;i++){
+      const angle=(i/8)*Math.PI*2;
+      const r=a.r*(0.8+Math.sin(i*3+a.x)*0.2);
+      const px=a.x+Math.cos(angle)*r,py=a.y+Math.sin(angle)*r;
+      if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+    }
+    ctx.closePath();ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=1;ctx.stroke();
+    // hp indicator
+    if(a.hp>1){ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font='10px sans-serif';ctx.textAlign='center';ctx.fillText(a.hp,a.x,a.y+3);ctx.textAlign='left'}
+  }
+  // pickups
+  for(const p of pickups){
+    ctx.fillStyle=p.type==='heal'?'#2ecc71':'#f39c12';
+    ctx.beginPath();ctx.arc(p.x,p.y,8,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='10px sans-serif';ctx.textAlign='center';
+    ctx.fillText(p.type==='heal'?'+':'⚡',p.x,p.y+3);ctx.textAlign='left';
+  }
+  // ship
+  if(alive){
+    ctx.fillStyle='#0ff';
+    ctx.beginPath();
+    ctx.moveTo(ship.x,ship.y-12);
+    ctx.lineTo(ship.x-ship.w/2,ship.y+8);
+    ctx.lineTo(ship.x-ship.w/4,ship.y+4);
+    ctx.lineTo(ship.x,ship.y+10);
+    ctx.lineTo(ship.x+ship.w/4,ship.y+4);
+    ctx.lineTo(ship.x+ship.w/2,ship.y+8);
+    ctx.closePath();ctx.fill();
+    // glow
+    ctx.fillStyle='rgba(0,255,255,0.1)';
+    ctx.beginPath();ctx.arc(ship.x,ship.y,20,0,Math.PI*2);ctx.fill();
+    // engine
+    ctx.fillStyle='rgba(255,100,0,0.6)';
+    ctx.beginPath();ctx.arc(ship.x,ship.y+12,4+Math.random()*3,0,Math.PI*2);ctx.fill();
+  }
+  // bullets
+  ctx.fillStyle='#0ff';
+  for(const b of bullets){
+    ctx.fillRect(b.x-1,b.y-4,2,8);
+    ctx.fillStyle='rgba(0,255,255,0.3)';
+    ctx.fillRect(b.x-2,b.y-6,4,12);
+    ctx.fillStyle='#0ff';
+  }
+  // particles
+  for(const p of particles){
+    ctx.globalAlpha=p.life/20;ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+function spawnParticles(x,y,color,n){
+  for(let i=0;i<n;i++)particles.push({x,y,dx:(Math.random()-0.5)*6,dy:(Math.random()-0.5)*6,life:20,color,r:Math.random()*3+1});
+}
+
+function gameOver(){
+  document.getElementById('olMsg').textContent=`波次: ${wave} | 分数: ${score}`;
+  document.getElementById('overlay').classList.add('show');
+}
+
+function updateInfo(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('wave').textContent=wave;
+  document.getElementById('hp').textContent=hp;
+}
+
+let keys={};
+document.addEventListener('keydown',e=>{keys[e.key]=true;
+  if(keys['ArrowLeft']||keys['a'])ship.vx=-5;
+  if(keys['ArrowRight']||keys['d'])ship.vx=5;
+});
+document.addEventListener('keyup',e=>{keys[e.key]=false;
+  if(!keys['ArrowLeft']&&!keys['a']&&!keys['ArrowRight']&&!keys['d'])ship.vx=0;
+  if(keys['ArrowLeft']||keys['a'])ship.vx=-5;
+  if(keys['ArrowRight']||keys['d'])ship.vx=5;
+});
+canvas.addEventListener('mousemove',e=>{
+  const rect=canvas.getBoundingClientRect();
+  const mx=(e.clientX-rect.left)*(W/rect.width);
+  ship.vx=(mx-ship.x)*0.15;
+});
+
+function loop(){update();render();requestAnimationFrame(loop)}
+newGame();loop();
+</script>
+</body>
+</html>

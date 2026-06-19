@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔢 数独</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0e0e18;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#5bf;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+#board{display:grid;grid-template-columns:repeat(9,42px);grid-template-rows:repeat(9,42px);gap:1px;background:#2a2a3e;padding:3px;border-radius:8px;border:2px solid #3a3a5e;box-shadow:0 0 30px rgba(90,130,255,0.1)}
+.cell{background:#1a1a2e;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;cursor:pointer;transition:all .15s;border:1px solid #2a2a3e}
+.cell:hover{background:#2a2a3e}
+.cell.given{color:#5bf}
+.cell.user{color:#ffd700}
+.cell.error{color:#f44;background:#2a1a1a}
+.cell.selected{background:#2a2a4e;border-color:#5bf}
+.cell.highlight{background:#1a1a3e}
+.cell:nth-child(3n){border-right:2px solid #3a3a5e}
+.cell:nth-child(9n){border-right:none}
+.cell:nth-child(n+19):nth-child(-n+27){border-bottom:2px solid #3a3a5e}
+.cell:nth-child(n+46):nth-child(-n+54){border-bottom:2px solid #3a3a5e}
+#numpad{display:flex;gap:6px;margin-top:12px}
+.num-btn{width:42px;height:42px;background:#1a1a2e;color:#5bf;border:1px solid #2a2a3e;border-radius:6px;font-size:18px;font-weight:bold;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.num-btn:hover{background:#2a2a3e;border-color:#5bf}
+.num-btn.erase{color:#f44}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#5bf;border:1px solid #2a2a3a;border-radius:6px;cursor:pointer;font-size:12px}
+#controls select{padding:4px 8px;background:#1a1a2e;color:#5bf;border:1px solid #2a2a3a;border-radius:4px;font-size:12px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;color:#ffd700;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#5bf;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+#noteMode{font-size:11px;color:#888;margin-top:4px}
+#noteMode.active{color:#ffd700}
+</style>
+</head>
+<body>
+<h1>🔢 数独</h1>
+<div id="info">
+  <div>难度: <span class="val" id="diff">简单</span></div>
+  <div>错误: <span class="val" id="errors">0</span>/3</div>
+  <div>时间: <span class="val" id="timer">0:00</span></div>
+</div>
+<div id="board"></div>
+<div id="numpad"></div>
+<div id="noteMode">📝 笔记模式: 关 (按N切换)</div>
+<div id="controls">
+  <select id="difficulty" onchange="newGame()">
+    <option value="easy">简单</option>
+    <option value="medium">中等</option>
+    <option value="hard">困难</option>
+    <option value="expert">专家</option>
+  </select>
+  <button onclick="newGame()">新游戏</button>
+  <button onclick="toggleNote()">📝 笔记</button>
+  <button onclick="hint()">💡 提示</button>
+  <button onclick="undoAction()">↩ 撤销</button>
+</div>
+<div id="overlay">
+  <h2 id="olTitle">🎉 恭喜完成！</h2>
+  <p id="olMsg"></p>
+  <button onclick="newGame()">再来一局</button>
+</div>
+<script>
+let puzzle,solution,board,notes,selected,errors,maxErrors,noteMode,startTime,timerInterval,history;
+
+function generateSudoku(difficulty){
+  // generate a solved board
+  const grid=Array.from({length:9},()=>Array(9).fill(0));
+  function solve(g){
+    for(let r=0;r<9;r++)for(let c=0;c<9;c++){
+      if(g[r][c]!==0)continue;
+      const nums=shuffle([1,2,3,4,5,6,7,8,9]);
+      for(const n of nums){
+        if(isValid(g,r,c,n)){g[r][c]=n;if(solve(g))return true;g[r][c]=0}
+      }
+      return false;
+    }
+    return true;
+  }
+  solve(grid);
+  const sol=grid.map(r=>[...r]);
+  // remove cells based on difficulty
+  const removeCount={easy:35,medium:45,hard:52,expert:58}[difficulty]||45;
+  const positions=shuffle(Array.from({length:81},(_,i)=>[Math.floor(i/9),i%9]));
+  let removed=0;
+  for(const[r,c]of positions){
+    if(removed>=removeCount)break;
+    const backup=grid[r][c];
+    grid[r][c]=0;
+    // check unique solution (simplified - just remove)
+    removed++;
+  }
+  return{puzzle:grid,solution:sol};
+}
+
+function isValid(g,r,c,n){
+  for(let i=0;i<9;i++){
+    if(g[r][i]===n)return false;
+    if(g[i][c]===n)return false;
+  }
+  const br=Math.floor(r/3)*3,bc=Math.floor(c/3)*3;
+  for(let dr=0;dr<3;dr++)for(let dc=0;dc<3;dc++){
+    if(g[br+dr][bc+dc]===n)return false;
+  }
+  return true;
+}
+
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+
+function newGame(){
+  const diff=document.getElementById('difficulty').value;
+  const{puzzle:p,solution:s}=generateSudoku(diff);
+  puzzle=p;solution=s;
+  board=puzzle.map(r=>[...r]);
+  notes=Array.from({length:9},()=>Array.from({length:9},()=>new Set()));
+  selected=null;errors=0;noteMode=false;history=[];
+  maxErrors=3;
+  clearInterval(timerInterval);startTime=Date.now();
+  timerInterval=setInterval(updateTimer,1000);
+  document.getElementById('overlay').classList.remove('show');
+  document.getElementById('diff').textContent={easy:'简单',medium:'中等',hard:'困难',expert:'专家'}[diff];
+  renderBoard();renderNumpad();
+}
+
+function renderBoard(){
+  const el=document.getElementById('board');
+  el.innerHTML='';
+  for(let r=0;r<9;r++){
+    for(let c=0;c<9;c++){
+      const cell=document.createElement('div');
+      cell.className='cell';
+      const val=board[r][c];
+      if(puzzle[r][c]!==0){cell.classList.add('given');cell.textContent=val}
+      else if(val!==0){
+        cell.classList.add('user');
+        cell.textContent=val;
+        if(val!==solution[r][c])cell.classList.add('error');
+      }else{
+        // show notes
+        if(notes[r][c].size>0){
+          cell.style.fontSize='10px';cell.style.flexWrap='wrap';cell.style.lineHeight='1';
+          cell.textContent=[...notes[r][c]].sort().join('');
+        }
+      }
+      if(selected&&selected[0]===r&&selected[1]===c)cell.classList.add('selected');
+      else if(selected&&(selected[0]===r||selected[1]===c||
+        (Math.floor(selected[0]/3)===Math.floor(r/3)&&Math.floor(selected[1]/3)===Math.floor(c/3)))){
+        cell.classList.add('highlight');
+      }
+      cell.addEventListener('click',()=>{selected=[r,c];renderBoard()});
+      el.appendChild(cell);
+    }
+  }
+}
+
+function renderNumpad(){
+  const el=document.getElementById('numpad');
+  el.innerHTML='';
+  for(let n=1;n<=9;n++){
+    const btn=document.createElement('div');
+    btn.className='num-btn';btn.textContent=n;
+    btn.addEventListener('click',()=>placeNumber(n));
+    el.appendChild(btn);
+  }
+  const erase=document.createElement('div');
+  erase.className='num-btn erase';erase.textContent='✕';
+  erase.addEventListener('click',()=>placeNumber(0));
+  el.appendChild(erase);
+}
+
+function placeNumber(n){
+  if(!selected)return;
+  const[r,c]=selected;
+  if(puzzle[r][c]!==0)return;
+  if(noteMode&&n!==0){
+    history.push({r,c,board:board.map(r=>[...r]),notes:notes.map(r=>r.map(s=>new Set(s)))});
+    if(notes[r][c].has(n))notes[r][c].delete(n);else notes[r][c].add(n);
+    renderBoard();return;
+  }
+  history.push({r,c,board:board.map(r=>[...r]),notes:notes.map(r=>r.map(s=>new Set(s)))});
+  notes[r][c].clear();
+  if(n===0){board[r][c]=0;renderBoard();return}
+  board[r][c]=n;
+  if(n!==solution[r][c]){errors++;document.getElementById('errors').textContent=errors;if(errors>=maxErrors)gameOver()}
+  else{
+    // clear notes in same row/col/box
+    for(let i=0;i<9;i++){notes[r][i].delete(n);notes[i][c].delete(n)}
+    const br=Math.floor(r/3)*3,bc=Math.floor(c/3)*3;
+    for(let dr=0;dr<3;dr++)for(let dc=0;dc<3;dc++)notes[br+dr][bc+dc].delete(n);
+    if(checkWin())win();
+  }
+  renderBoard();
+}
+
+function checkWin(){
+  for(let r=0;r<9;r++)for(let c=0;c<9;c++){
+    if(board[r][c]!==solution[r][c])return false;
+  }
+  return true;
+}
+
+function win(){
+  clearInterval(timerInterval);
+  const time=Math.floor((Date.now()-startTime)/1000);
+  document.getElementById('olTitle').textContent='🎉 恭喜完成！';
+  document.getElementById('olTitle').style.color='#ffd700';
+  document.getElementById('olMsg').textContent=`用时: ${Math.floor(time/60)}:${String(time%60).padStart(2,'0')} | 错误: ${errors}`;
+  document.getElementById('overlay').classList.add('show');
+}
+
+function gameOver(){
+  clearInterval(timerInterval);
+  document.getElementById('olTitle').textContent='💀 游戏结束';
+  document.getElementById('olTitle').style.color='#e74c3c';
+  document.getElementById('olMsg').textContent=`错误过多 (${errors}/${maxErrors})`;
+  document.getElementById('overlay').classList.add('show');
+  // reveal solution
+  for(let r=0;r<9;r++)for(let c=0;c<9;c++){
+    if(board[r][c]!==solution[r][c])board[r][c]=solution[r][c];
+  }
+  renderBoard();
+}
+
+function toggleNote(){noteMode=!noteMode;document.getElementById('noteMode').className=noteMode?'active':'';document.getElementById('noteMode').textContent='📝 笔记模式: '+(noteMode?'开':'关')+' (按N切换)'}
+
+function hint(){
+  if(!selected)return;
+  const[r,c]=selected;
+  if(puzzle[r][c]!==0||board[r][c]===solution[r][c])return;
+  board[r][c]=solution[r][c];
+  puzzle[r][c]=solution[r][c]; // mark as given so it can't be changed
+  notes[r][c].clear();
+  if(checkWin())win();
+  renderBoard();
+}
+
+function undoAction(){
+  if(!history.length)return;
+  const h=history.pop();
+  board=h.board;notes=h.notes;
+  renderBoard();
+}
+
+function updateTimer(){
+  const time=Math.floor((Date.now()-startTime)/1000);
+  document.getElementById('timer').textContent=`${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}`;
+}
+
+document.addEventListener('keydown',e=>{
+  const n=parseInt(e.key);
+  if(n>=1&&n<=9)placeNumber(n);
+  if(e.key==='Backspace'||e.key==='Delete')placeNumber(0);
+  if(e.key==='n'||e.key==='N')toggleNote();
+  if(e.key==='z'&&e.ctrlKey){e.preventDefault();undoAction()}
+});
+
+newGame();
+</script>
+</body>
+</html>

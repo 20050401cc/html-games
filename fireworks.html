@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎆 烟花</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#ffd700;margin-bottom:6px}
+canvas{border:2px solid #2a2a3e;border-radius:8px;box-shadow:0 0 30px rgba(255,215,0,0.1);cursor:pointer}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#ffd700;border:1px solid #2a2a3e;border-radius:6px;cursor:pointer;font-size:12px}
+#msg{margin-top:8px;font-size:12px;color:#888}
+</style>
+</head>
+<body>
+<h1>🎆 烟花</h1>
+<canvas id="game"></canvas>
+<div id="controls">
+  <button onclick="addRandom()">🎇 发射</button>
+  <button onclick="addBurst()">💥 齐射</button>
+  <button onclick="toggleAuto()">🔄 自动</button>
+</div>
+<div id="msg">点击发射烟花 · 观看绚烂的烟火表演</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=600,H=500;
+canvas.width=W;canvas.height=H;
+
+let fireworks,particles,autoMode;
+
+function init(){
+  fireworks=[];particles=[];autoMode=true;
+}
+
+function addFirework(x,y){
+  const colors=['#f55','#5f5','#55f','#ff5','#f5f','#5ff','#fa0','#a0f','#ffd700','#0ff'];
+  const color=colors[Math.floor(Math.random()*colors.length)];
+  fireworks.push({x:W/2+Math.random()*100-50,y:H,targetX:x,targetY:y,vx:0,vy:0,color,phase:'rise',trail:[]});
+}
+
+function addRandom(){addFirework(50+Math.random()*(W-100),50+Math.random()*(H/2))}
+function addBurst(){for(let i=0;i<5;i++)setTimeout(()=>addRandom(),i*100)}
+function toggleAuto(){autoMode=!autoMode}
+
+function explode(fw){
+  const count=60+Math.floor(Math.random()*40);
+  const type=Math.random();
+  for(let i=0;i<count;i++){
+    const angle=Math.random()*Math.PI*2;
+    let speed=1+Math.random()*4;
+    if(type<0.3)speed*=0.5+Math.random()*0.5; // compact
+    else if(type<0.6)speed*=1+Math.random(); // spread
+    particles.push({
+      x:fw.targetX,y:fw.targetY,
+      vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,
+      color:fw.color,life:60+Math.random()*40,maxLife:100,
+      gravity:0.02+Math.random()*0.02,
+      trail:[],sparkle:Math.random()<0.3,
+    });
+  }
+}
+
+function update(){
+  // auto mode
+  if(autoMode&&Math.random()<0.02)addRandom();
+  // update fireworks
+  for(let i=fireworks.length-1;i>=0;i--){
+    const fw=fireworks[i];
+    if(fw.phase==='rise'){
+      const dx=fw.targetX-fw.x,dy=fw.targetY-fw.y;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d<10){fw.phase='explode';explode(fw);fireworks.splice(i,1);continue}
+      fw.vx=dx/d*8;fw.vy=dy/d*8;
+      fw.x+=fw.vx;fw.y+=fw.vy;
+      fw.trail.push({x:fw.x,y:fw.y});
+      if(fw.trail.length>15)fw.trail.shift();
+    }
+  }
+  // update particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.vy+=p.gravity;
+    p.vx*=0.99;p.vy*=0.99;
+    p.x+=p.vx;p.y+=p.vy;
+    p.life--;
+    p.trail.push({x:p.x,y:p.y});
+    if(p.trail.length>8)p.trail.shift();
+    if(p.life<=0)particles.splice(i,1);
+  }
+}
+
+function render(){
+  ctx.fillStyle='rgba(10,10,20,0.15)';ctx.fillRect(0,0,W,H);
+  // cityscape silhouette
+  ctx.fillStyle='#0f0f1a';
+  for(let x=0;x<W;x+=30+Math.random()*20){
+    const h=50+Math.random()*100;
+    ctx.fillRect(x,H-h,25+Math.random()*10,h);
+    // windows
+    ctx.fillStyle='rgba(255,215,0,0.1)';
+    for(let wy=H-h+10;wy<H-10;wy+=15){
+      for(let wx=x+3;wx<x+22;wx+=8){
+        if(Math.random()>0.5)ctx.fillRect(wx,wy,4,6);
+      }
+    }
+    ctx.fillStyle='#0f0f1a';
+  }
+  // fireworks
+  for(const fw of fireworks){
+    // trail
+    for(let i=0;i<fw.trail.length;i++){
+      const t=fw.trail[i];
+      ctx.globalAlpha=i/fw.trail.length*0.5;
+      ctx.fillStyle=fw.color;
+      ctx.beginPath();ctx.arc(t.x,t.y,2,0,Math.PI*2);ctx.fill();
+    }
+    // head
+    ctx.globalAlpha=1;
+    ctx.fillStyle='#fff';
+    ctx.beginPath();ctx.arc(fw.x,fw.y,3,0,Math.PI*2);ctx.fill();
+  }
+  // particles
+  for(const p of particles){
+    const alpha=p.life/p.maxLife;
+    // trail
+    for(let i=0;i<p.trail.length;i++){
+      const t=p.trail[i];
+      ctx.globalAlpha=alpha*(i/p.trail.length)*0.3;
+      ctx.fillStyle=p.color;
+      ctx.beginPath();ctx.arc(t.x,t.y,1.5,0,Math.PI*2);ctx.fill();
+    }
+    // particle
+    ctx.globalAlpha=alpha;
+    const size=p.sparkle?2+Math.sin(Date.now()/50)*1:2;
+    ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,size,0,Math.PI*2);ctx.fill();
+    // glow
+    ctx.globalAlpha=alpha*0.3;
+    ctx.beginPath();ctx.arc(p.x,p.y,size*3,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+canvas.addEventListener('click',e=>{
+  const rect=canvas.getBoundingClientRect();
+  const x=(e.clientX-rect.left)*(W/rect.width);
+  const y=(e.clientY-rect.top)*(H/rect.height);
+  addFirework(x,y);
+});
+
+function loop(){update();render();requestAnimationFrame(loop)}
+
+init();
+loop();
+</script>
+</body>
+</html>

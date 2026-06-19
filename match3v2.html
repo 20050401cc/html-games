@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎪 消消乐2</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#ffd700;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #2a2a3e;border-radius:8px;box-shadow:0 0 30px rgba(255,215,0,0.1);cursor:pointer}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#ffd700;border:1px solid #2a2a3e;border-radius:6px;cursor:pointer;font-size:12px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#ffd700;color:#111;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🎪 消消乐2</h1>
+<div id="info">
+  <div>分数: <span class="val" id="score">0</span></div>
+  <div>目标: <span class="val" id="target">800</span></div>
+  <div>步数: <span class="val" id="moves">25</span></div>
+  <div>连击: <span class="val" id="combo">0</span></div>
+</div>
+<canvas id="game"></canvas>
+<div id="controls">
+  <button onclick="newGame()">新游戏</button>
+</div>
+<div id="overlay">
+  <h2 id="olTitle">🎉 过关！</h2>
+  <p id="olMsg"></p>
+  <button onclick="nextLevel()">下一关</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const COLS=8,ROWS=8,CELL=52;
+canvas.width=COLS*CELL;canvas.height=ROWS*CELL;
+
+const COLORS=['#e74c3c','#3498db','#2ecc71','#f1c40f','#9b59b6','#e67e22'];
+const SHAPES=['●','■','▲','★','♦','♥'];
+
+let grid,selected,score,target,moves,level,combo,animating;
+
+function newGame(){
+  level=level||1;
+  score=0;combo=0;moves=20+level*5;target=600+level*300;animating=false;
+  selected=null;
+  document.getElementById('overlay').classList.remove('show');
+  do{grid=Array.from({length:ROWS},()=>Array.from({length:COLS},()=>Math.floor(Math.random()*COLORS.length)))}
+  while(findMatches().length>0);
+  render();updateInfo();
+}
+
+function nextLevel(){level++;newGame()}
+
+function render(){
+  ctx.fillStyle='#0a0e14';ctx.fillRect(0,0,canvas.width,canvas.height);
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      const x=c*CELL,y=r*CELL;
+      if(grid[r][c]<0)continue;
+      // background
+      ctx.fillStyle=(r+c)%2===0?'#12121e':'#16162a';
+      ctx.fillRect(x+1,y+1,CELL-2,CELL-2);
+      // gem
+      const color=COLORS[grid[r][c]];
+      if(color){
+        const grad=ctx.createRadialGradient(x+CELL/2-6,y+CELL/2-6,2,x+CELL/2,y+CELL/2,CELL/2-4);
+        grad.addColorStop(0,'#fff');grad.addColorStop(0.3,color);grad.addColorStop(1,color+'88');
+        ctx.fillStyle=grad;
+        ctx.beginPath();ctx.roundRect(x+4,y+4,CELL-8,CELL-8,8);ctx.fill();
+        // shape
+        ctx.font='bold 16px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillStyle='rgba(255,255,255,0.8)';
+        ctx.fillText(SHAPES[grid[r][c]],x+CELL/2,y+CELL/2);
+      }
+      // selection highlight
+      if(selected&&selected[0]===r&&selected[1]===c){
+        ctx.strokeStyle='#ffd700';ctx.lineWidth=3;
+        ctx.strokeRect(x+2,y+2,CELL-4,CELL-4);
+      }
+    }
+  }
+}
+
+function findMatches(){
+  const matches=new Set();
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS-2;c++){
+      if(grid[r][c]>=0&&grid[r][c]===grid[r][c+1]&&grid[r][c]===grid[r][c+2]){
+        matches.add(`${r},${c}`);matches.add(`${r},${c+1}`);matches.add(`${r},${c+2}`);
+      }
+    }
+  }
+  for(let c=0;c<COLS;c++){
+    for(let r=0;r<ROWS-2;r++){
+      if(grid[r][c]>=0&&grid[r][c]===grid[r+1][c]&&grid[r][c]===grid[r+2][c]){
+        matches.add(`${r},${c}`);matches.add(`${r+1},${c}`);matches.add(`${r+2},${c}`);
+      }
+    }
+  }
+  return[...matches].map(s=>s.split(',').map(Number));
+}
+
+function removeMatches(matches){
+  for(const[r,c]of matches)grid[r][c]=-1;
+  const pts=matches.length*10*(1+combo*0.5);
+  score+=Math.floor(pts);
+  combo++;
+}
+
+function dropGems(){
+  for(let c=0;c<COLS;c++){
+    let empty=0;
+    for(let r=ROWS-1;r>=0;r--){
+      if(grid[r][c]<0)empty++;
+      else if(empty>0){grid[r+empty][c]=grid[r][c];grid[r][c]=-1}
+    }
+    for(let r=0;r<empty;r++)grid[r][c]=Math.floor(Math.random()*COLORS.length);
+  }
+}
+
+function swapGems(r1,c1,r2,c2){
+  [grid[r1][c1],grid[r2][c2]]=[grid[r2][c2],grid[r1][c1]];
+}
+
+async function processMatches(){
+  animating=true;
+  combo=0;
+  let matches=findMatches();
+  while(matches.length>0){
+    removeMatches(matches);
+    render();updateInfo();
+    await sleep(200);
+    dropGems();
+    render();
+    await sleep(200);
+    matches=findMatches();
+  }
+  animating=false;
+  if(score>=target){
+    document.getElementById('olTitle').textContent=`🎉 第${level}关完成！`;
+    document.getElementById('olTitle').style.color='#ffd700';
+    document.getElementById('olMsg').textContent=`分数: ${score}`;
+    document.getElementById('overlay').classList.add('show');
+  }else if(moves<=0&&score<target){
+    document.getElementById('olTitle').textContent='💀 步数用完';
+    document.getElementById('olTitle').style.color='#e74c3c';
+    document.getElementById('olMsg').textContent=`分数: ${score}/${target}`;
+    document.getElementById('overlay').classList.add('show');
+  }
+}
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+
+canvas.addEventListener('click',e=>{
+  if(animating)return;
+  const rect=canvas.getBoundingClientRect();
+  const c=Math.floor((e.clientX-rect.left)*(canvas.width/rect.width)/CELL);
+  const r=Math.floor((e.clientY-rect.top)*(canvas.height/rect.height)/CELL);
+  if(r<0||r>=ROWS||c<0||c>=COLS)return;
+  if(!selected){selected=[r,c];render();return}
+  const[sr,sc]=selected;
+  if(Math.abs(sr-r)+Math.abs(sc-c)===1){
+    swapGems(sr,sc,r,c);
+    if(findMatches().length>0){
+      moves--;
+      selected=null;
+      render();updateInfo();
+      processMatches();
+    }else{
+      swapGems(sr,sc,r,c);
+      selected=null;render();
+    }
+  }else{
+    selected=[r,c];render();
+  }
+});
+
+function updateInfo(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('target').textContent=target;
+  document.getElementById('moves').textContent=moves;
+  document.getElementById('combo').textContent=combo;
+}
+
+newGame();
+</script>
+</body>
+</html>

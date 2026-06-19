@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎪 数字华容道2</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#ffd700;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #2a2a3e;border-radius:8px;box-shadow:0 0 30px rgba(255,215,0,0.1);cursor:pointer}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#ffd700;border:1px solid #2a2a3e;border-radius:6px;cursor:pointer;font-size:12px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;color:#ffd700;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#ffd700;color:#111;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🎪 数字华容道2</h1>
+<div id="info">
+  <div>步数: <span class="val" id="moves">0</span></div>
+  <div>时间: <span class="val" id="timer">0:00</span></div>
+</div>
+<canvas id="game"></canvas>
+<div id="controls">
+  <select id="size" onchange="newGame()"><option value="3">3×3</option><option value="4" selected>4×4</option><option value="5">5×5</option></select>
+  <button onclick="newGame()">新游戏</button>
+</div>
+<div id="overlay">
+  <h2>🎉 完成！</h2>
+  <p id="olMsg"></p>
+  <button onclick="newGame()">再来一局</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+
+let grid,size,cellSize,moves,startTime,timerInterval,emptyPos;
+
+function newGame(){
+  size=parseInt(document.getElementById('size').value);
+  cellSize=Math.min(80,Math.floor(400/size));
+  canvas.width=size*cellSize;canvas.height=size*cellSize;
+  grid=Array.from({length:size},(_,r)=>Array.from({length:size},(_,c)=>r*size+c+1));
+  grid[size-1][size-1]=0;emptyPos={r:size-1,c:size-1};
+  moves=0;
+  clearInterval(timerInterval);startTime=Date.now();
+  timerInterval=setInterval(()=>{
+    const t=Math.floor((Date.now()-startTime)/1000);
+    document.getElementById('timer').textContent=`${Math.floor(t/60)}:${String(t%60).padStart(2,'0')}`;
+  },1000);
+  document.getElementById('overlay').classList.remove('show');
+  shuffle();render();updateInfo();
+}
+
+function shuffle(){
+  for(let i=0;i<size*size*20;i++){
+    const neighbors=[];
+    if(emptyPos.r>0)neighbors.push({r:emptyPos.r-1,c:emptyPos.c});
+    if(emptyPos.r<size-1)neighbors.push({r:emptyPos.r+1,c:emptyPos.c});
+    if(emptyPos.c>0)neighbors.push({r:emptyPos.r,c:emptyPos.c-1});
+    if(emptyPos.c<size-1)neighbors.push({r:emptyPos.r,c:emptyPos.c+1});
+    const n=neighbors[Math.floor(Math.random()*neighbors.length)];
+    grid[emptyPos.r][emptyPos.c]=grid[n.r][n.c];
+    grid[n.r][n.c]=0;
+    emptyPos=n;
+  }
+}
+
+function moveTile(r,c){
+  if(Math.abs(r-emptyPos.r)+Math.abs(c-emptyPos.c)!==1)return false;
+  grid[emptyPos.r][emptyPos.c]=grid[r][c];
+  grid[r][c]=0;
+  emptyPos={r,c};
+  moves++;updateInfo();render();
+  if(checkWin())win();
+  return true;
+}
+
+function checkWin(){
+  for(let r=0;r<size;r++)for(let c=0;c<size;c++){
+    const expected=r*size+c+1;
+    if(r===size-1&&c===size-1){if(grid[r][c]!==0)return false}
+    else if(grid[r][c]!==expected)return false;
+  }
+  return true;
+}
+
+function win(){
+  clearInterval(timerInterval);
+  const time=Math.floor((Date.now()-startTime)/1000);
+  document.getElementById('olMsg').textContent=`步数: ${moves} | 用时: ${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}`;
+  document.getElementById('overlay').classList.add('show');
+}
+
+function render(){
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,canvas.width,canvas.height);
+  for(let r=0;r<size;r++)for(let c=0;c<size;c++){
+    const x=c*cellSize,y=r*cellSize;
+    if(grid[r][c]===0){
+      ctx.fillStyle='#0a0a14';
+      ctx.fillRect(x+2,y+2,cellSize-4,cellSize-4);
+    }else{
+      ctx.fillStyle='#2a2a4a';
+      ctx.beginPath();ctx.roundRect(x+2,y+2,cellSize-4,cellSize-4,6);ctx.fill();
+      ctx.fillStyle='#ffd700';
+      ctx.font=`bold ${cellSize/2.5}px sans-serif`;
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(grid[r][c],x+cellSize/2,y+cellSize/2);
+      if(grid[r][c]===r*size+c+1){
+        ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.lineWidth=2;
+        ctx.beginPath();ctx.roundRect(x+2,y+2,cellSize-4,cellSize-4,6);ctx.stroke();
+      }
+    }
+  }
+}
+
+canvas.addEventListener('click',e=>{
+  const rect=canvas.getBoundingClientRect();
+  const c=Math.floor((e.clientX-rect.left)/cellSize);
+  const r=Math.floor((e.clientY-rect.top)/cellSize);
+  if(r>=0&&r<size&&c>=0&&c<size)moveTile(r,c);
+});
+
+document.addEventListener('keydown',e=>{
+  switch(e.key){
+    case'ArrowUp':e.preventDefault();if(emptyPos.r<size-1)moveTile(emptyPos.r+1,emptyPos.c);break;
+    case'ArrowDown':e.preventDefault();if(emptyPos.r>0)moveTile(emptyPos.r-1,emptyPos.c);break;
+    case'ArrowLeft':e.preventDefault();if(emptyPos.c<size-1)moveTile(emptyPos.r,emptyPos.c+1);break;
+    case'ArrowRight':e.preventDefault();if(emptyPos.c>0)moveTile(emptyPos.r,emptyPos.c-1);break;
+  }
+});
+
+function updateInfo(){document.getElementById('moves').textContent=moves}
+
+newGame();
+</script>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎪 弹珠迷宫</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#ffd700;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #2a2a3e;border-radius:8px;box-shadow:0 0 30px rgba(255,215,0,0.1)}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#ffd700;border:1px solid #2a2a3e;border-radius:6px;cursor:pointer;font-size:12px}
+</style>
+</head>
+<body>
+<h1>🎪 弹珠迷宫</h1>
+<div id="info">
+  <div>分数: <span class="val" id="score">0</span></div>
+  <div>收集: <span class="val" id="collected">0</span></div>
+  <div>时间: <span class="val" id="timer">0</span>s</div>
+</div>
+<canvas id="game"></canvas>
+<div id="controls">
+  <button onclick="newGame()">新游戏</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=400,H=400;
+canvas.width=W;canvas.height=H;
+
+const GRAVITY=0.2;
+let ball,gems,obstacles,score,collected,tiltX,tiltY,startTime;
+
+function newGame(){
+  ball={x:50,y:50,vx:0,vy:0,r:8};
+  gems=[];obstacles=[];score=0;collected=0;
+  tiltX=0;tiltY=0;startTime=Date.now();
+  // generate gems
+  for(let i=0;i<10;i++){
+    gems.push({x:30+Math.random()*(W-60),y:30+Math.random()*(H-60),collected:false});
+  }
+  // generate obstacles
+  for(let i=0;i<6;i++){
+    const horizontal=Math.random()>0.5;
+    const w=horizontal?60+Math.random()*80:8;
+    const h=horizontal?8:60+Math.random()*80;
+    obstacles.push({x:50+Math.random()*(W-100),y:50+Math.random()*(H-100),w,h});
+  }
+  updateInfo();render();
+}
+
+function update(){
+  // apply tilt as gravity
+  ball.vx+=tiltX*GRAVITY;
+  ball.vy+=tiltY*GRAVITY;
+  ball.vx*=0.98;ball.vy*=0.98;
+  ball.x+=ball.vx;ball.y+=ball.vy;
+  // wall bounce
+  if(ball.x-ball.r<0){ball.x=ball.r;ball.vx=Math.abs(ball.vx)*0.6}
+  if(ball.x+ball.r>W){ball.x=W-ball.r;ball.vx=-Math.abs(ball.vx)*0.6}
+  if(ball.y-ball.r<0){ball.y=ball.r;ball.vy=Math.abs(ball.vy)*0.6}
+  if(ball.y+ball.r>H){ball.y=H-ball.r;ball.vy=-Math.abs(ball.vy)*0.6}
+  // obstacle collision
+  for(const o of obstacles){
+    const cx=Math.max(o.x,Math.min(o.x+o.w,ball.x));
+    const cy=Math.max(o.y,Math.min(o.y+o.h,ball.y));
+    const dx=ball.x-cx,dy=ball.y-cy;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist<ball.r){
+      const nx=dx/dist||0,ny=dy/dist||0;
+      ball.x=cx+nx*ball.r;ball.y=cy+ny*ball.r;
+      const dot=ball.vx*nx+ball.vy*ny;
+      ball.vx-=2*dot*nx*0.6;ball.vy-=2*dot*ny*0.6;
+    }
+  }
+  // gem collection
+  for(const g of gems){
+    if(g.collected)continue;
+    const dx=ball.x-g.x,dy=ball.y-g.y;
+    if(Math.sqrt(dx*dx+dy*dy)<ball.r+8){
+      g.collected=true;collected++;score+=100;
+    }
+  }
+  const elapsed=Math.floor((Date.now()-startTime)/1000);
+  document.getElementById('timer').textContent=elapsed;
+  updateInfo();
+}
+
+function render(){
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
+  // grid
+  ctx.strokeStyle='#1a1a2e';ctx.lineWidth=0.5;
+  for(let x=0;x<W;x+=20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
+  for(let y=0;y<H;y+=20){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+  // obstacles
+  for(const o of obstacles){
+    ctx.fillStyle='#3a3a5a';
+    ctx.fillRect(o.x,o.y,o.w,o.h);
+    ctx.fillStyle='rgba(255,255,255,0.05)';
+    ctx.fillRect(o.x,o.y,o.w,o.h/3);
+  }
+  // gems
+  for(const g of gems){
+    if(g.collected)continue;
+    ctx.fillStyle='rgba(255,215,0,0.2)';
+    ctx.beginPath();ctx.arc(g.x,g.y,12,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ffd700';
+    ctx.beginPath();ctx.arc(g.x,g.y,6,0,Math.PI*2);ctx.fill();
+  }
+  // ball
+  const grad=ctx.createRadialGradient(ball.x-2,ball.y-2,1,ball.x,ball.y,ball.r);
+  grad.addColorStop(0,'#fff');grad.addColorStop(0.3,'#5bf');grad.addColorStop(1,'#38a');
+  ctx.fillStyle=grad;
+  ctx.beginPath();ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);ctx.fill();
+  // tilt indicator
+  ctx.fillStyle='rgba(255,255,255,0.1)';
+  ctx.beginPath();ctx.arc(W-30,H-30,15,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#ffd700';
+  ctx.beginPath();ctx.arc(W-30+tiltX*10,H-30+tiltY*10,3,0,Math.PI*2);ctx.fill();
+}
+
+document.addEventListener('keydown',e=>{
+  switch(e.key){
+    case'ArrowLeft':case'a':tiltX=-1;e.preventDefault();break;
+    case'ArrowRight':case'd':tiltX=1;e.preventDefault();break;
+    case'ArrowUp':case'w':tiltY=-1;e.preventDefault();break;
+    case'ArrowDown':case's':tiltY=1;e.preventDefault();break;
+  }
+});
+document.addEventListener('keyup',e=>{
+  switch(e.key){
+    case'ArrowLeft':case'a':if(tiltX<0)tiltX=0;break;
+    case'ArrowRight':case'd':if(tiltX>0)tiltX=0;break;
+    case'ArrowUp':case'w':if(tiltY<0)tiltY=0;break;
+    case'ArrowDown':case's':if(tiltY>0)tiltY=0;break;
+  }
+});
+
+// device orientation for mobile
+window.addEventListener('deviceorientation',e=>{
+  tiltX=Math.max(-1,Math.min(1,(e.gamma||0)/30));
+  tiltY=Math.max(-1,Math.min(1,(e.beta||0)/30));
+});
+
+function updateInfo(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('collected').textContent=collected;
+}
+
+function loop(){update();render();requestAnimationFrame(loop)}
+
+newGame();loop();
+</script>
+</body>
+</html>

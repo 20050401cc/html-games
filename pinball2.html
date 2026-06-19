@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎯 弹珠台</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#ffd700;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #3a3a2a;border-radius:8px;box-shadow:0 0 30px rgba(255,215,0,0.1)}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#ffd700;border:1px solid #2a2a3e;border-radius:6px;cursor:pointer;font-size:12px}
+</style>
+</head>
+<body>
+<h1>🎯 弹珠台</h1>
+<div id="info">
+  <div>分数: <span class="val" id="score">0</span></div>
+  <div>球: <span class="val" id="balls">3</span></div>
+  <div>最高: <span class="val" id="best">0</span></div>
+</div>
+<canvas id="game"></canvas>
+<div id="controls">
+  <button onclick="launch()">发射 (空格)</button>
+  <button onclick="newGame()">新游戏</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=300,H=500;
+canvas.width=W;canvas.height=H;
+
+const GRAVITY=0.15;
+let ball,bumpers,targets,score,ballsLeft,launched,particles,flippers;
+let best=parseInt(localStorage.getItem('pinball2_best')||'0');
+document.getElementById('best').textContent=best;
+
+function newGame(){
+  score=0;ballsLeft=3;launched=false;
+  ball={x:W-25,y:H-80,vx:0,vy:0,r:6};
+  particles=[];
+  bumpers=[
+    {x:W/2,y:120,r:22,pts:100,color:'#f55',hit:0},
+    {x:W/2-60,y:180,r:18,pts:50,color:'#5f5',hit:0},
+    {x:W/2+60,y:180,r:18,pts:50,color:'#55f',hit:0},
+    {x:W/2,y:240,r:20,pts:75,color:'#ff5',hit:0},
+    {x:W/2-40,y:300,r:16,pts:50,color:'#f5f',hit:0},
+    {x:W/2+40,y:300,r:16,pts:50,color:'#5ff',hit:0},
+  ];
+  targets=[
+    {x:30,y:100,w:20,h:6,pts:25,color:'#fa0',hit:false},
+    {x:W-50,y:100,w:20,h:6,pts:25,color:'#fa0',hit:false},
+    {x:W/2-10,y:60,w:20,h:6,pts:50,color:'#f0a',hit:false},
+  ];
+  flippers={
+    left:{x:W/2-50,y:H-50,len:50,angle:0.4,active:false},
+    right:{x:W/2+50,y:H-50,len:50,angle:Math.PI-0.4,active:false},
+  };
+  updateInfo();render();
+}
+
+function launch(){
+  if(launched)return;
+  ball.x=W-25;ball.y=H-80;
+  ball.vx=-1+Math.random()*2;ball.vy=-7-Math.random()*3;
+  launched=true;
+}
+
+function update(){
+  if(!launched)return;
+  ball.vy+=GRAVITY;
+  ball.vx*=0.995;ball.vy*=0.995;
+  ball.x+=ball.vx;ball.y+=ball.vy;
+  // walls
+  if(ball.x-ball.r<8){ball.x=8+ball.r;ball.vx=Math.abs(ball.vx)*0.7}
+  if(ball.x+ball.r>W-8){ball.x=W-8-ball.r;ball.vx=-Math.abs(ball.vx)*0.7}
+  if(ball.y-ball.r<8){ball.y=8+ball.r;ball.vy=Math.abs(ball.vy)*0.7}
+  // bottom
+  if(ball.y>H+20){
+    launched=false;ballsLeft--;
+    if(ballsLeft<=0)gameEnd();
+    else{ball.x=W-25;ball.y=H-80}
+    updateInfo();return;
+  }
+  // bumpers
+  for(const b of bumpers){
+    const dx=ball.x-b.x,dy=ball.y-b.y;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist<ball.r+b.r){
+      const nx=dx/dist,ny=dy/dist;
+      ball.x=b.x+nx*(ball.r+b.r);ball.y=b.y+ny*(ball.r+b.r);
+      const dot=ball.vx*nx+ball.vy*ny;
+      ball.vx-=2*dot*nx*1.1;ball.vy-=2*dot*ny*1.1;
+      score+=b.pts;b.hit++;
+      spawnParticles(b.x,b.y,b.color,6);
+    }
+  }
+  // targets
+  for(const t of targets){
+    if(!t.hit&&ball.x>t.x&&ball.x<t.x+t.w&&ball.y>t.y&&ball.y<t.y+t.h){
+      t.hit=true;score+=t.pts;
+      spawnParticles(t.x+t.w/2,t.y+t.h/2,t.color,8);
+    }
+  }
+  // check all targets hit
+  if(targets.every(t=>t.hit)){score+=200;targets.forEach(t=>t.hit=false)}
+  // flippers
+  for(const side of['left','right']){
+    const f=flippers[side];
+    const target=f.active?(side==='left'?-0.4:Math.PI+0.4):(side==='left'?0.4:Math.PI-0.4);
+    f.angle+=(target-f.angle)*0.3;
+    const endX=f.x+Math.cos(f.angle)*f.len;
+    const endY=f.y+Math.sin(f.angle)*f.len;
+    // line collision
+    const dx=endX-f.x,dy=endY-f.y;
+    const len=Math.sqrt(dx*dx+dy*dy);
+    const nx=-dy/len,ny=dx/len;
+    const px=ball.x-f.x,py=ball.y-f.y;
+    const proj=px*dx/len+py*dy/len;
+    const dist=px*nx+py*ny;
+    if(proj>=0&&proj<=len&&Math.abs(dist)<ball.r+3){
+      ball.x+=nx*(ball.r+3-Math.abs(dist))*(dist>0?1:-1);
+      ball.y+=ny*(ball.r+3-Math.abs(dist))*(dist>0?1:-1);
+      if(f.active){ball.vx+=nx*7;ball.vy+=ny*7-2}
+      else{const dot=ball.vx*nx+ball.vy*ny;ball.vx-=2*dot*nx*0.5;ball.vy-=2*dot*ny*0.5}
+    }
+  }
+  // particles
+  for(let i=particles.length-1;i>=0;i--){
+    particles[i].x+=particles[i].dx;particles[i].y+=particles[i].dy;particles[i].life--;
+    if(particles[i].life<=0)particles.splice(i,1);
+  }
+  updateInfo();
+}
+
+function render(){
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
+  // border
+  ctx.strokeStyle='#3a3a2a';ctx.lineWidth=6;
+  ctx.strokeRect(3,3,W-6,H-6);
+  // bumpers
+  for(const b of bumpers){
+    const scale=b.hit>0?1.1:1;
+    const grad=ctx.createRadialGradient(b.x,b.y,0,b.x,b.y,b.r*scale);
+    grad.addColorStop(0,'#fff');grad.addColorStop(0.3,b.color);grad.addColorStop(1,b.color+'40');
+    ctx.fillStyle=grad;
+    ctx.beginPath();ctx.arc(b.x,b.y,b.r*scale,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='bold 11px sans-serif';ctx.textAlign='center';
+    ctx.fillText(b.pts,b.x,b.y+4);ctx.textAlign='left';
+  }
+  // targets
+  for(const t of targets){
+    ctx.fillStyle=t.hit?'#333':t.color;
+    ctx.fillRect(t.x,t.y,t.w,t.h);
+  }
+  // flippers
+  for(const side of['left','right']){
+    const f=flippers[side];
+    const endX=f.x+Math.cos(f.angle)*f.len;
+    const endY=f.y+Math.sin(f.angle)*f.len;
+    ctx.strokeStyle=f.active?'#ffd700':'#888';ctx.lineWidth=6;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(f.x,f.y);ctx.lineTo(endX,endY);ctx.stroke();
+    ctx.lineCap='butt';
+  }
+  // launch chute
+  ctx.fillStyle='#1a1a0e';ctx.fillRect(W-35,0,35,H);
+  // ball
+  if(launched){
+    const grad=ctx.createRadialGradient(ball.x-1,ball.y-1,1,ball.x,ball.y,ball.r);
+    grad.addColorStop(0,'#fff');grad.addColorStop(0.5,'#ddd');grad.addColorStop(1,'#888');
+    ctx.fillStyle=grad;
+    ctx.beginPath();ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);ctx.fill();
+  }else{
+    ctx.fillStyle='#ccc';
+    ctx.beginPath();ctx.arc(W-20,H-80,ball.r,0,Math.PI*2);ctx.fill();
+  }
+  // particles
+  for(const p of particles){
+    ctx.globalAlpha=p.life/20;ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+function spawnParticles(x,y,color,n){
+  for(let i=0;i<n;i++)particles.push({x,y,dx:(Math.random()-0.5)*5,dy:(Math.random()-0.5)*5,life:20,color,r:Math.random()*2+1});
+}
+
+function gameEnd(){
+  if(score>best){best=score;localStorage.setItem('pinball2_best',best);document.getElementById('best').textContent=best}
+  alert(`游戏结束！分数: ${score}`);
+  newGame();
+}
+
+function updateInfo(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('balls').textContent=ballsLeft;
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowLeft'||e.key==='z')flippers.left.active=true;
+  if(e.key==='ArrowRight'||e.key==='m')flippers.right.active=true;
+  if(e.key===' '){e.preventDefault();launch()}
+});
+document.addEventListener('keyup',e=>{
+  if(e.key==='ArrowLeft'||e.key==='z')flippers.left.active=false;
+  if(e.key==='ArrowRight'||e.key==='m')flippers.right.active=false;
+});
+
+function loop(){update();render();requestAnimationFrame(loop)}
+
+newGame();loop();
+</script>
+</body>
+</html>

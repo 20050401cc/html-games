@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎯 瞄准训练</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0;cursor:crosshair;user-select:none}
+h1{font-size:28px;color:#f55;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{background:#12121e;border:2px solid #2a2a3e;border-radius:8px;box-shadow:0 0 30px rgba(255,85,85,0.1)}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#f55;border:1px solid #2a2a3e;border-radius:6px;cursor:pointer;font-size:12px}
+#controls select{padding:4px 8px;background:#1a1a2e;color:#f55;border:1px solid #2a2a3e;border-radius:4px;font-size:12px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column;cursor:default}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#f55;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🎯 瞄准训练</h1>
+<div id="info">
+  <div>命中: <span class="val" id="hits">0</span></div>
+  <div>脱靶: <span class="val" id="misses">0</span></div>
+  <div>准确率: <span class="val" id="accuracy">100%</span></div>
+  <div>时间: <span class="val" id="timer">30</span>s</div>
+</div>
+<canvas id="game"></canvas>
+<div id="controls">
+  <select id="mode" onchange="resetGame()">
+    <option value="classic">经典</option>
+    <option value="fading">渐隐</option>
+    <option value="moving">移动</option>
+    <option value="tiny">微小</option>
+  </select>
+  <button onclick="startGame()">开始</button>
+</div>
+<div id="overlay">
+  <h2>⏱️ 时间到！</h2>
+  <p id="olMsg"></p>
+  <button onclick="startGame()">再来一次</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=500,H=400;
+canvas.width=W;canvas.height=H;
+
+let targets,hits,misses,alive,timeLeft,mode,animId,timerInterval,score;
+
+function resetGame(){
+  targets=[];hits=0;misses=0;score=0;alive=false;timeLeft=30;
+  document.getElementById('overlay').classList.remove('show');
+  clearInterval(timerInterval);
+  document.getElementById('timer').textContent='30';
+  document.getElementById('hits').textContent='0';
+  document.getElementById('misses').textContent='0';
+  document.getElementById('accuracy').textContent='100%';
+  render();
+}
+
+function startGame(){
+  resetGame();
+  mode=document.getElementById('mode').value;
+  alive=true;
+  spawnTarget();
+  timerInterval=setInterval(()=>{
+    timeLeft--;
+    document.getElementById('timer').textContent=timeLeft;
+    if(timeLeft<=0){alive=false;clearInterval(timerInterval);endGame()}
+  },1000);
+  requestAnimationFrame(loop);
+}
+
+function spawnTarget(){
+  const baseR=mode==='tiny'?8:mode==='fading'?20:18;
+  const r=baseR+Math.random()*(mode==='tiny'?6:10);
+  const x=r+Math.random()*(W-r*2);
+  const y=r+Math.random()*(H-r*2);
+  targets.push({x,y,r,maxR:r,life:mode==='fading'?60:999,dx:mode==='moving'?(Math.random()-0.5)*2:0,dy:mode==='moving'?(Math.random()-0.5)*2:0,spawnTime:Date.now()});
+}
+
+function loop(){
+  if(!alive)return;
+  update();render();
+  requestAnimationFrame(loop);
+}
+
+function update(){
+  for(let i=targets.length-1;i>=0;i--){
+    const t=targets[i];
+    t.x+=t.dx;t.y+=t.dy;
+    // bounce off edges
+    if(t.x-t.r<0||t.x+t.r>W)t.dx*=-1;
+    if(t.y-t.r<0||t.y+t.r>H)t.dy*=-1;
+    if(mode==='fading'){
+      t.life--;t.r=t.maxR*(t.life/60);
+      if(t.life<=0){targets.splice(i,1);misses++;spawnTarget()}
+    }
+  }
+  // spawn more
+  if(targets.length<3&&Math.random()<0.05)spawnTarget();
+}
+
+function render(){
+  ctx.fillStyle='#12121e';ctx.fillRect(0,0,W,H);
+  // grid
+  ctx.strokeStyle='#1a1a2e';ctx.lineWidth=0.5;
+  for(let x=0;x<W;x+=20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
+  for(let y=0;y<H;y+=20){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+  // targets
+  for(const t of targets){
+    const age=Date.now()-t.spawnTime;
+    const scale=Math.min(1,age/150);
+    const r=t.r*scale;
+    // outer ring
+    ctx.strokeStyle='#f55';ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(t.x,t.y,r,0,Math.PI*2);ctx.stroke();
+    // inner rings
+    ctx.strokeStyle='rgba(255,85,85,0.4)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(t.x,t.y,r*0.6,0,Math.PI*2);ctx.stroke();
+    ctx.beginPath();ctx.arc(t.x,t.y,r*0.3,0,Math.PI*2);ctx.stroke();
+    // center dot
+    ctx.fillStyle='#f55';
+    ctx.beginPath();ctx.arc(t.x,t.y,3,0,Math.PI*2);ctx.fill();
+    // fade effect
+    if(mode==='fading'){
+      ctx.fillStyle=`rgba(255,85,85,${t.life/60*0.15})`;
+      ctx.beginPath();ctx.arc(t.x,t.y,r,0,Math.PI*2);ctx.fill();
+    }
+  }
+  // crosshair (follows mouse via CSS cursor)
+  // stats
+  const total=hits+misses;
+  const acc=total>0?Math.round(hits/total*100):100;
+  document.getElementById('accuracy').textContent=acc+'%';
+}
+
+canvas.addEventListener('click',e=>{
+  if(!alive)return;
+  const rect=canvas.getBoundingClientRect();
+  const mx=(e.clientX-rect.left)*(W/rect.width);
+  const my=(e.clientY-rect.top)*(H/rect.height);
+  let hit=false;
+  for(let i=targets.length-1;i>=0;i--){
+    const t=targets[i];
+    const d=Math.sqrt((mx-t.x)**2+(my-t.y)**2);
+    if(d<=t.r){
+      // hit!
+      const reactionTime=Date.now()-t.spawnTime;
+      const pts=Math.max(10,Math.floor(100-reactionTime/10)+(mode==='tiny'?50:0));
+      score+=pts;
+      hits++;
+      targets.splice(i,1);
+      spawnTarget();
+      hit=true;
+      break;
+    }
+  }
+  if(!hit)misses++;
+  document.getElementById('hits').textContent=hits;
+  document.getElementById('misses').textContent=misses;
+});
+
+function endGame(){
+  const total=hits+misses;
+  const acc=total>0?Math.round(hits/total*100):0;
+  const avgReaction=hits>0?Math.round(targets.reduce((s,t)=>s+Date.now()-t.spawnTime,0)/Math.max(1,targets.length)):0;
+  document.getElementById('olMsg').textContent=`命中: ${hits} | 准确率: ${acc}% | 分数: ${score}`;
+  document.getElementById('overlay').classList.add('show');
+}
+
+resetGame();
+</script>
+</body>
+</html>

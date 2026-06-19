@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎲 骰子Yahtzee</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#ffd700;margin-bottom:8px}
+#game{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+#diceArea{text-align:center}
+#dice{display:flex;gap:8px;margin:12px 0}
+.die{width:56px;height:56px;background:#1a1a2e;border:2px solid #3a3a3e;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:28px;cursor:pointer;transition:all .2s}
+.die:hover{border-color:#ffd700}
+.die.selected{border-color:#ffd700;background:#2a2a1e;transform:translateY(-4px)}
+.die.rolling{animation:shake 0.1s infinite}
+@keyframes shake{0%{transform:rotate(0)}25%{transform:rotate(5deg)}75%{transform:rotate(-5deg)}}
+#scoreCard{background:#12121e;border:1px solid #2a2a3e;border-radius:8px;padding:12px;min-width:260px}
+#scoreCard h3{color:#ffd700;margin-bottom:8px;font-size:14px}
+.score-row{display:flex;justify-content:space-between;padding:4px 8px;cursor:pointer;border-radius:4px;transition:background .15s;font-size:13px}
+.score-row:hover{background:#1a1a2e}
+.score-row.used{color:#666;cursor:default}
+.score-row .name{flex:1}
+.score-row .val{min-width:30px;text-align:right;font-weight:bold}
+.score-row .potential{color:#ffd700}
+#info{display:flex;gap:16px;margin:12px 0;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+#controls{display:flex;gap:8px;margin:12px 0}
+#controls button{padding:8px 20px;background:#ffd700;color:#111;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:bold}
+#controls button:disabled{background:#333;color:#666;cursor:not-allowed}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;color:#ffd700;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#ffd700;color:#111;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🎲 骰子Yahtzee</h1>
+<div id="game">
+  <div id="diceArea">
+    <div id="dice"></div>
+    <div id="info">
+      <div>回合: <span class="val" id="round">1</span>/13</div>
+      <div>掷骰: <span class="val" id="rolls">3</span>/3</div>
+      <div>总分: <span class="val" id="total">0</span></div>
+    </div>
+    <div id="controls">
+      <button id="rollBtn" onclick="rollDice()">🎲 掷骰子</button>
+    </div>
+    <div style="font-size:12px;color:#888;margin-top:4px">点击骰子锁定/解锁</div>
+  </div>
+  <div id="scoreCard"></div>
+</div>
+<div id="overlay">
+  <h2>🎉 游戏结束！</h2>
+  <p id="olMsg"></p>
+  <button onclick="newGame()">再来一局</button>
+</div>
+<script>
+const CATEGORIES=[
+  {id:'ones',name:'一点',calc:d=>d.filter(v=>v===1).reduce((a,b)=>a+b,0)},
+  {id:'twos',name:'二点',calc:d=>d.filter(v=>v===2).reduce((a,b)=>a+b,0)},
+  {id:'threes',name:'三点',calc:d=>d.filter(v=>v===3).reduce((a,b)=>a+b,0)},
+  {id:'fours',name:'四点',calc:d=>d.filter(v=>v===4).reduce((a,b)=>a+b,0)},
+  {id:'fives',name:'五点',calc:d=>d.filter(v=>v===5).reduce((a,b)=>a+b,0)},
+  {id:'sixes',name:'六点',calc:d=>d.filter(v=>v===6).reduce((a,b)=>a+b,0)},
+  {id:'threeKind',name:'三条',calc:d=>{const c=countDice(d);return c.some(v=>v>=3)?d.reduce((a,b)=>a+b,0):0}},
+  {id:'fourKind',name:'四条',calc:d=>{const c=countDice(d);return c.some(v=>v>=4)?d.reduce((a,b)=>a+b,0):0}},
+  {id:'fullHouse',name:'葫芦',calc:d=>{const c=countDice(d);return c.includes(3)&&c.includes(2)?25:0}},
+  {id:'smallStr',name:'小顺',calc:d=>{const s=[...new Set(d)].sort().join('');return(s.includes('1234')||s.includes('2345')||s.includes('3456'))?30:0}},
+  {id:'largeStr',name:'大顺',calc:d=>{const s=[...new Set(d)].sort().join('');return(s==='12345'||s==='23456')?40:0}},
+  {id:'yahtzee',name:'Yahtzee',calc:d=>d.every(v=>v===d[0])?50:0},
+  {id:'chance',name:'机会',calc:d=>d.reduce((a,b)=>a+b,0)},
+];
+
+let dice,locked,rollsLeft,round,scores,used;
+
+function countDice(d){const c=Array(7).fill(0);d.forEach(v=>c[v]++);return c.filter(v=>v>0)}
+
+function newGame(){
+  dice=[0,0,0,0,0];locked=[false,false,false,false,false];
+  rollsLeft=3;round=1;
+  scores={};used={};
+  document.getElementById('overlay').classList.remove('show');
+  renderAll();
+}
+
+function rollDice(){
+  if(rollsLeft<=0)return;
+  for(let i=0;i<5;i++){
+    if(!locked[i])dice[i]=Math.floor(Math.random()*6)+1;
+  }
+  rollsLeft--;
+  renderAll();
+  if(rollsLeft===0)document.getElementById('rollBtn').disabled=true;
+}
+
+function selectCategory(id){
+  if(used[id]||rollsLeft===3)return;
+  const cat=CATEGORIES.find(c=>c.id===id);
+  scores[id]=cat.calc(dice);
+  used[id]=true;
+  // next round
+  round++;rollsLeft=3;
+  dice=[0,0,0,0,0];locked=[false,false,false,false,false];
+  document.getElementById('rollBtn').disabled=false;
+  if(round>13)endGame();
+  renderAll();
+}
+
+function endGame(){
+  const total=Object.values(scores).reduce((a,b)=>a+b,0);
+  document.getElementById('olMsg').textContent=`总分: ${total}`;
+  document.getElementById('overlay').classList.add('show');
+}
+
+function renderAll(){
+  // dice
+  const diceEl=document.getElementById('dice');
+  diceEl.innerHTML=dice.map((v,i)=>`<div class="die${locked[i]?' selected':''}" onclick="locked[${i}]=!locked[${i}];renderAll()">${v?v:'🎲'}</div>`).join('');
+  // info
+  document.getElementById('round').textContent=round;
+  document.getElementById('rolls').textContent=rollsLeft;
+  const total=Object.values(scores).reduce((a,b)=>a+b,0);
+  document.getElementById('total').textContent=total;
+  // score card
+  const card=document.getElementById('scoreCard');
+  card.innerHTML=`<h3>记分卡</h3>`+CATEGORIES.map(cat=>{
+    const isUsed=used[cat.id];
+    const potential=dice[0]?cat.calc(dice):0;
+    const val=isUsed?scores[cat.id]:'';
+    return`<div class="score-row${isUsed?' used':''}" onclick="selectCategory('${cat.id}')">
+      <span class="name">${cat.name}</span>
+      <span class="val${!isUsed&&dice[0]?' potential':''}">${isUsed?val:(dice[0]?potential:'-')}</span>
+    </div>`;
+  }).join('')+`<div style="text-align:right;padding:8px;font-weight:bold;color:#ffd700">总分: ${total}</div>`;
+}
+
+newGame();
+</script>
+</body>
+</html>

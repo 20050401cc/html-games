@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🧩 管道工</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#5bf;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #2a2a3e;border-radius:8px;box-shadow:0 0 30px rgba(90,130,255,0.1);cursor:pointer}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#5bf;border:1px solid #2a2a3e;border-radius:6px;cursor:pointer;font-size:12px}
+#controls select{padding:4px 8px;background:#1a1a2e;color:#5bf;border:1px solid #2a2a3e;border-radius:4px;font-size:12px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;color:#ffd700;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#5bf;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🧩 管道工</h1>
+<div id="info">
+  <div>步数: <span class="val" id="moves">0</span></div>
+  <div>等级: <span class="val" id="level">1</span></div>
+</div>
+<canvas id="game"></canvas>
+<div id="controls">
+  <select id="size" onchange="newLevel()"><option value="5">5×5</option><option value="7" selected>7×7</option><option value="9">9×9</option></select>
+  <button onclick="newLevel()">新关卡</button>
+  <button onclick="checkSolution()">✅ 检查</button>
+</div>
+<div id="overlay">
+  <h2>🎉 管道连通！</h2>
+  <p id="olMsg"></p>
+  <button onclick="newLevel()">下一关</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+
+const PIPE_TYPES={
+  straight:{dirs:[[0,-1],[0,1]],icon:'│'},
+  corner:{dirs:[[1,0],[0,1]],icon:'┐'},
+  tee:{dirs:[[0,-1],[1,0],[0,1]],icon:'┤'},
+  cross:{dirs:[[0,-1],[1,0],[0,1],[-1,0]],icon:'┼'},
+  end:{dirs:[[0,1]],icon:'╵'},
+};
+
+let grid,cols,rows,cellSize,moves,level,source,sink;
+
+function newLevel(){
+  cols=parseInt(document.getElementById('size').value);
+  rows=cols;
+  cellSize=Math.min(50,Math.floor(400/Math.max(cols,rows)));
+  canvas.width=cols*cellSize;canvas.height=rows*cellSize;
+  moves=0;level=level||1;
+  generatePuzzle();
+  document.getElementById('overlay').classList.remove('show');
+  document.getElementById('moves').textContent='0';
+  document.getElementById('level').textContent=level;
+  render();
+}
+
+function generatePuzzle(){
+  // generate a valid path first
+  grid=Array.from({length:rows},()=>Array.from({length:cols},()=>({type:'empty',rotation:0,connected:false})));
+  // random walk from source to sink
+  source={x:0,y:Math.floor(Math.random()*rows)};
+  sink={x:cols-1,y:Math.floor(Math.random()*rows)};
+  let path=[{x:source.x,y:source.y}];
+  let cur={x:source.x,y:source.y};
+  while(cur.x!==sink.x||cur.y!==sink.y){
+    const moves=[];
+    if(cur.x<sink.x)moves.push({x:1,y:0});
+    if(cur.x>sink.x)moves.push({x:-1,y:0});
+    if(cur.y<sink.y)moves.push({x:0,y:1});
+    if(cur.y>sink.y)moves.push({x:0,y:-1});
+    if(Math.random()<0.3){
+      // random move
+      const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+      const d=dirs[Math.floor(Math.random()*4)];
+      const nx=cur.x+d.x,ny=cur.y+d.y;
+      if(nx>=0&&nx<cols&&ny>=0&&ny<rows&&!path.some(p=>p.x===nx&&p.y===ny)){
+        moves.push(d);
+      }
+    }
+    if(!moves.length)break;
+    const m=moves[Math.floor(Math.random()*moves.length)];
+    cur={x:cur.x+m.x,y:cur.y+m.y};
+    if(!path.some(p=>p.x===cur.x&&p.y===cur.y))path.push({...cur});
+  }
+  // assign pipe types based on path
+  for(let i=0;i<path.length;i++){
+    const p=path[i];
+    const prev=i>0?path[i-1]:null;
+    const next=i<path.length-1?path[i+1]:null;
+    const dirs=[];
+    if(prev){dirs.push({x:prev.x-p.x,y:prev.y-p.y})}
+    if(next){dirs.push({x:next.x-p.x,y:next.y-p.y})}
+    // determine pipe type
+    if(dirs.length===1){
+      grid[p.y][p.x].type='end';
+    }else{
+      const dx=dirs[0].x+dirs[1].x,dy=dirs[0].y+dirs[1].y;
+      if(dx===0&&dy===0)grid[p.y][p.x].type='straight';
+      else if(dirs[0].x!==0&&dirs[1].y!==0||dirs[0].y!==0&&dirs[1].x!==0)grid[p.y][p.x].type='corner';
+      else grid[p.y][p.x].type='straight';
+    }
+    // calculate rotation
+    grid[p.y][p.x].rotation=calcRotation(grid[p.y][p.x].type,dirs);
+    grid[p.y][p.x].isPath=true;
+  }
+  // add some random pipes
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    if(grid[r][c].type==='empty'&&Math.random()<0.3){
+      const types=['straight','corner','tee','cross'];
+      grid[r][c].type=types[Math.floor(Math.random()*types.length)];
+      grid[r][c].rotation=Math.floor(Math.random()*4);
+    }
+  }
+  // scramble rotations
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    if(grid[r][c].type!=='empty'){
+      grid[r][c].rotation=Math.floor(Math.random()*4);
+    }
+  }
+}
+
+function calcRotation(type,dirs){
+  // simplified rotation calculation
+  return Math.floor(Math.random()*4);
+}
+
+function rotatePipe(r,c){
+  grid[r][c].rotation=(grid[r][c].rotation+1)%4;
+  moves++;
+  document.getElementById('moves').textContent=moves;
+  render();
+}
+
+function getDirs(type,rotation){
+  const base=PIPE_TYPES[type];
+  if(!base)return[];
+  return base.dirs.map(d=>{
+    let{x,y}=d;
+    for(let i=0;i<rotation;i++){const nx=-y,y=x;x=nx}
+    return{x,y};
+  });
+}
+
+function checkSolution(){
+  // BFS from source
+  const visited=Array.from({length:rows},()=>Array(cols).fill(false));
+  const queue=[source];
+  visited[source.y][source.x]=true;
+  let reached=false;
+  while(queue.length){
+    const cur=queue.shift();
+    if(cur.x===sink.x&&cur.y===sink.y){reached=true;break}
+    const cell=grid[cur.y][cur.x];
+    if(cell.type==='empty')continue;
+    const dirs=getDirs(cell.type,cell.rotation);
+    for(const d of dirs){
+      const nx=cur.x+d.x,ny=cur.y+d.y;
+      if(nx<0||nx>=cols||ny<0||ny>=rows||visited[ny][nx])continue;
+      // check neighbor connects back
+      const neighbor=grid[ny][nx];
+      if(neighbor.type==='empty')continue;
+      const nDirs=getDirs(neighbor.type,neighbor.rotation);
+      const connects=nDirs.some(nd=>nd.x===-d.x&&nd.y===-d.y);
+      if(connects){visited[ny][nx]=true;queue.push({x:nx,y:ny})}
+    }
+  }
+  if(reached){
+    document.getElementById('olMsg').textContent=`步数: ${moves}`;
+    document.getElementById('overlay').classList.add('show');
+    level++;
+  }
+}
+
+function render(){
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,canvas.width,canvas.height);
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const x=c*cellSize,y=r*cellSize;
+      const cell=grid[r][c];
+      // background
+      ctx.fillStyle=(r+c)%2===0?'#12121e':'#16162a';
+      ctx.fillRect(x,y,cellSize,cellSize);
+      // source/sink
+      if(c===source.x&&r===source.y){
+        ctx.fillStyle='#2ecc71';ctx.fillRect(x+2,y+2,cellSize-4,cellSize-4);
+      }
+      if(c===sink.x&&r===sink.y){
+        ctx.fillStyle='#e74c3c';ctx.fillRect(x+2,y+2,cellSize-4,cellSize-4);
+      }
+      // pipe
+      if(cell.type!=='empty'){
+        drawPipe(x,y,cellSize,cell.type,cell.rotation,cell.isPath);
+      }
+    }
+  }
+}
+
+function drawPipe(x,y,size,type,rotation,isPath){
+  const cx=x+size/2,cy=y+size/2;
+  const half=size/2-4;
+  ctx.strokeStyle=isPath?'#5bf':'#3a3a5a';
+  ctx.lineWidth=6;ctx.lineCap='round';
+  const dirs=getDirs(type,rotation);
+  for(const d of dirs){
+    ctx.beginPath();
+    ctx.moveTo(cx,cy);
+    if(d.x===1)ctx.lineTo(cx+half,cy);
+    if(d.x===-1)ctx.lineTo(cx-half,cy);
+    if(d.y===1)ctx.lineTo(cx,cy+half);
+    if(d.y===-1)ctx.lineTo(cx,cy-half);
+    ctx.stroke();
+  }
+  // center dot
+  ctx.fillStyle=isPath?'#5bf':'#3a3a5a';
+  ctx.beginPath();ctx.arc(cx,cy,4,0,Math.PI*2);ctx.fill();
+  ctx.lineCap='butt';
+}
+
+canvas.addEventListener('click',e=>{
+  const rect=canvas.getBoundingClientRect();
+  const c=Math.floor((e.clientX-rect.left)/cellSize);
+  const r=Math.floor((e.clientY-rect.top)/cellSize);
+  if(r>=0&&r<rows&&c>=0&&c<cols&&grid[r][c].type!=='empty'){
+    rotatePipe(r,c);
+  }
+});
+
+newLevel();
+</script>
+</body>
+</html>

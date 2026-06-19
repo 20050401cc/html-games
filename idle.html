@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🏭 放置工厂</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;color:#d0d0e0;display:flex;height:100vh;overflow:hidden}
+#left{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;position:relative}
+#clickArea{width:200px;height:200px;background:linear-gradient(135deg,#2a2a4a,#1a1a3a);border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:60px;transition:all .15s;border:3px solid #ffd700;box-shadow:0 0 30px rgba(255,215,0,0.2)}
+#clickArea:hover{transform:scale(1.05);box-shadow:0 0 40px rgba(255,215,0,0.3)}
+#clickArea:active{transform:scale(0.95)}
+#goldDisplay{font-size:36px;color:#ffd700;margin:16px 0;font-weight:bold}
+#gps{font-size:14px;color:#888}
+#right{width:350px;background:#12121e;border-left:1px solid #2a2a3e;overflow-y:auto;padding:12px}
+#right h2{font-size:14px;color:#ffd700;margin-bottom:8px;text-transform:uppercase}
+.building{display:flex;align-items:center;gap:10px;padding:10px;background:#1a1a2e;border:1px solid #2a2a3e;border-radius:8px;margin-bottom:6px;cursor:pointer;transition:all .15s}
+.building:hover{border-color:#ffd700;background:#1e1e32}
+.building.locked{opacity:0.4;cursor:not-allowed}
+.building .icon{font-size:28px;width:36px;text-align:center}
+.building .info{flex:1}
+.building .info .name{font-size:13px;color:#e0e0e0}
+.building .info .desc{font-size:10px;color:#888}
+.building .info .cost{font-size:11px;color:#ffd700}
+.building .count{font-size:18px;color:#5bf;font-weight:bold}
+#stats{margin-top:16px}
+.stat-row{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;color:#888}
+.stat-row .val{color:#ddd}
+#achievements{margin-top:16px}
+.ach{display:inline-block;padding:4px 8px;margin:2px;background:#1a1a2e;border-radius:4px;font-size:10px}
+.ach.unlocked{background:#2a3a2a;color:#4a4}
+.ach.locked{color:#444}
+#particles{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.flyGold{position:absolute;font-size:16px;color:#ffd700;font-weight:bold;pointer-events:none;animation:flyUp 1s ease-out forwards}
+@keyframes flyUp{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-80px)}}
+#prestige{margin-top:16px;padding:12px;background:#2a1a2e;border:1px solid #4a2a4a;border-radius:8px;text-align:center}
+#prestige button{padding:8px 20px;background:#a0f;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;margin-top:6px}
+#prestige button:disabled{background:#333;cursor:not-allowed}
+</style>
+</head>
+<body>
+<div id="left">
+  <div id="particles"></div>
+  <div id="clickArea" onclick="doClick(event)">💰</div>
+  <div id="goldDisplay">0</div>
+  <div id="gps">每秒: 0 金币</div>
+  <div id="prestige">
+    <div style="font-size:12px;color:#a0f">转生点: <span id="prestigePts">0</span></div>
+    <div style="font-size:10px;color:#666">转生可获得 <span id="prestigeGain">0</span> 点 (需要1M金币)</div>
+    <button onclick="doPrestige()" id="prestigeBtn" disabled>🔄 转生</button>
+  </div>
+</div>
+<div id="right">
+  <h2>🏗️ 建筑</h2>
+  <div id="buildings"></div>
+  <h2 style="margin-top:16px">📊 统计</h2>
+  <div id="stats"></div>
+  <h2 style="margin-top:16px">🏆 成就</h2>
+  <div id="achievements"></div>
+</div>
+<script>
+const BUILDINGS=[
+  {id:'cursor',name:'自动点击器',icon:'👆',baseCost:15,baseGps:0.1,desc:'每10秒自动点击1次'},
+  {id:'farm',name:'金币农场',icon:'🌾',baseCost:100,baseGps:1,desc:'稳定产出金币'},
+  {id:'mine',name:'金矿',icon:'⛏️',baseCost:1100,baseGps:8,desc:'开采地下金矿'},
+  {id:'factory',name:'金币工厂',icon:'🏭',baseCost:12000,baseGps:47,desc:'大规模生产金币'},
+  {id:'bank',name:'银行',icon:'🏦',baseCost:130000,baseGps:260,desc:'利滚利'},
+  {id:'temple',name:'神殿',icon:'🏛️',baseCost:1400000,baseGps:1400,desc:'神圣金币'},
+  {id:'portal',name:'传送门',icon:'🌀',baseCost:20000000,baseGps:7800,desc:'异界金币'},
+  {id:'lab',name:'炼金实验室',icon:'🧪',baseCost:330000000,baseGps:44000,desc:'点石成金'},
+  {id:'rocket',name:'太空站',icon:'🚀',baseCost:5100000000,baseGps:260000,desc:'星际淘金'},
+  {id:'blackhole',name:'黑洞引擎',icon:'🕳️',baseCost:75000000000,baseGps:1600000,desc:'从虚空中榨取能量'},
+];
+
+const ACHIEVEMENTS=[
+  {id:'click100',name:'初出茅庐',desc:'点击100次',check:()=>totalClicks>=100},
+  {id:'click1k',name:'点击达人',desc:'点击1000次',check:()=>totalClicks>=1000},
+  {id:'gold1k',name:'小有积蓄',desc:'累计1000金币',check:()=>totalGold>=1000},
+  {id:'gold1m',name:'百万富翁',desc:'累计1M金币',check:()=>totalGold>=1000000},
+  {id:'gold1b',name:'亿万富翁',desc:'累计1B金币',check:()=>totalGold>=1000000000},
+  {id:'build10',name:'小老板',desc:'拥有10个建筑',check:()=>totalBuildings>=10},
+  {id:'build50',name:'大亨',desc:'拥有50个建筑',check:()=>totalBuildings>=50},
+  {id:'build100',name:'帝国',desc:'拥有100个建筑',check:()=>totalBuildings>=100},
+  {id:'prestige1',name:'轮回',desc:'转生1次',check:()=>prestigeCount>=1},
+  {id:'prestige5',name:'老手',desc:'转生5次',check:()=>prestigeCount>=5},
+];
+
+let gold=0,totalGold=0,totalClicks=0,prestigePts=0,prestigeCount=0;
+let counts=BUILDINGS.map(()=>0);
+let unlocked=ACHIEVEMENTS.map(()=>false);
+let clickPower=1;
+
+function getGps(){
+  let gps=0;
+  BUILDINGS.forEach((b,i)=>{
+    gps+=b.baseGps*counts[i]*(1+prestigePts*0.1);
+  });
+  return gps;
+}
+
+function getCost(idx){
+  return Math.floor(BUILDINGS[idx].baseCost*Math.pow(1.15,counts[idx]));
+}
+
+function get totalBuildings(){return counts.reduce((a,b)=>a+b,0)}
+
+function doClick(e){
+  gold+=clickPower;totalGold+=clickPower;totalClicks++;
+  // flying gold
+  const el=document.createElement('div');
+  el.className='flyGold';
+  el.textContent=`+${formatNum(clickPower)}`;
+  el.style.left=(e.clientX-20)+'px';el.style.top=(e.clientY-20)+'px';
+  document.getElementById('particles').appendChild(el);
+  setTimeout(()=>el.remove(),1000);
+  updateDisplay();
+}
+
+function buyBuilding(idx){
+  const cost=getCost(idx);
+  if(gold<cost)return;
+  gold-=cost;
+  counts[idx]++;
+  updateDisplay();
+}
+
+function doPrestige(){
+  const gain=Math.floor(Math.sqrt(totalGold/1000000));
+  if(gain<=0)return;
+  if(!confirm(`确定转生？将重置金币和建筑，获得 ${gain} 转生点`))return;
+  prestigePts+=gain;prestigeCount++;
+  gold=0;totalGold=0;totalClicks=0;counts=BUILDINGS.map(()=>0);
+  clickPower=1+Math.floor(prestigePts/5);
+  saveGame();updateDisplay();
+}
+
+function formatNum(n){
+  if(n>=1e12)return(n/1e12).toFixed(1)+'T';
+  if(n>=1e9)return(n/1e9).toFixed(1)+'B';
+  if(n>=1e6)return(n/1e6).toFixed(1)+'M';
+  if(n>=1e3)return(n/1e3).toFixed(1)+'K';
+  return Math.floor(n).toString();
+}
+
+function updateDisplay(){
+  document.getElementById('goldDisplay').textContent=formatNum(gold);
+  document.getElementById('gps').textContent=`每秒: ${formatNum(getGps())} 金币`;
+  document.getElementById('prestigePts').textContent=prestigePts;
+  const gain=Math.floor(Math.sqrt(totalGold/1000000));
+  document.getElementById('prestigeGain').textContent=gain;
+  document.getElementById('prestigeBtn').disabled=gain<=0;
+  // buildings
+  const bel=document.getElementById('buildings');
+  bel.innerHTML=BUILDINGS.map((b,i)=>{
+    const cost=getCost(i);
+    const canBuy=gold>=cost;
+    return`<div class="building${canBuy?'':' locked'}" onclick="${canBuy?`buyBuilding(${i})`:''}">
+      <div class="icon">${b.icon}</div>
+      <div class="info"><div class="name">${b.name}</div><div class="desc">${b.desc}</div><div class="cost">💰 ${formatNum(cost)}</div></div>
+      <div class="count">${counts[i]}</div>
+    </div>`;
+  }).join('');
+  // stats
+  document.getElementById('stats').innerHTML=[
+    ['总点击',totalClicks],
+    ['总金币',formatNum(totalGold)],
+    ['建筑数',totalBuildings],
+    ['点击力',clickPower],
+    ['转生加成',`+${prestigePts*10}%`],
+  ].map(([k,v])=>`<div class="stat-row"><span>${k}</span><span class="val">${v}</span></div>`).join('');
+  // achievements
+  ACHIEVEMENTS.forEach((a,i)=>{
+    const ok=a.check();
+    if(ok&&!unlocked[i])unlocked[i]=true;
+  });
+  document.getElementById('achievements').innerHTML=ACHIEVEMENTS.map((a,i)=>
+    `<span class="ach ${unlocked[i]?'unlocked':'locked'}">${unlocked[i]?'✅':'🔒'} ${a.name}</span>`
+  ).join('');
+}
+
+// game loop
+setInterval(()=>{
+  const gps=getGps();
+  gold+=gps/10;totalGold+=gps/10;
+  updateDisplay();
+},100);
+
+// save/load
+function saveGame(){
+  localStorage.setItem('idle_save',JSON.stringify({gold,totalGold,totalClicks,prestigePts,prestigeCount,counts,unlocked,clickPower}));
+}
+function loadGame(){
+  try{
+    const d=JSON.parse(localStorage.getItem('idle_save'));
+    if(d){gold=d.gold;totalGold=d.totalGold;totalClicks=d.totalClicks;prestigePts=d.prestigePts;prestigeCount=d.prestigeCount;counts=d.counts;unlocked=d.unlocked||[];clickPower=d.clickPower||1}
+  }catch(e){}
+}
+loadGame();
+setInterval(saveGame,30000);
+updateDisplay();
+</script>
+</body>
+</html>

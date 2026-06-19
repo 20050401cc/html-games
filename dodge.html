@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>💣 弹幕躲避</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#f55;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #2a2a3e;border-radius:8px;box-shadow:0 0 30px rgba(255,85,85,0.1);cursor:none}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#f55;border:1px solid #2a2a3e;border-radius:6px;cursor:pointer;font-size:12px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#f55;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>💣 弹幕躲避</h1>
+<div id="info">
+  <div>时间: <span class="val" id="timer">0</span>s</div>
+  <div>分数: <span class="val" id="score">0</span></div>
+  <div>最高: <span class="val" id="best">0</span></div>
+</div>
+<canvas id="game"></canvas>
+<div id="controls">
+  <button onclick="newGame()">开始</button>
+</div>
+<div id="overlay">
+  <h2 id="olTitle">💀 被击中！</h2>
+  <p id="olMsg"></p>
+  <button onclick="newGame()">再来一次</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=400,H=500;
+canvas.width=W;canvas.height=H;
+
+let player,bullets,particles,score,alive,startTime,mouseX,mouseY,spawnRate;
+let best=parseInt(localStorage.getItem('dodge_best')||'0');
+document.getElementById('best').textContent=best;
+
+function newGame(){
+  player={x:W/2,y:H-50,r:8};
+  bullets=[];particles=[];score=0;alive=true;spawnRate=30;
+  startTime=Date.now();
+  mouseX=W/2;mouseY=H-50;
+  document.getElementById('overlay').classList.remove('show');
+  requestAnimationFrame(loop);
+}
+
+function spawnBullet(){
+  const patterns=['straight','aimed','spiral','random'];
+  const pattern=patterns[Math.floor(Math.random()*patterns.length)];
+  const elapsed=(Date.now()-startTime)/1000;
+  const speed=1.5+elapsed*0.05;
+  switch(pattern){
+    case'straight':{
+      const x=Math.random()*W;
+      bullets.push({x,y:0,vx:0,vy:speed,r:4,color:'#f55'});
+      break;
+    }
+    case'aimed':{
+      const dx=player.x-W/2,dy=player.y-0;
+      const d=Math.sqrt(dx*dx+dy*dy)||1;
+      bullets.push({x:Math.random()*W,y:0,vx:dx/d*speed*0.8,vy:dy/d*speed*0.8,r:5,color:'#fa0'});
+      break;
+    }
+    case'spiral':{
+      const angle=elapsed*2;
+      bullets.push({x:W/2+Math.cos(angle)*100,y:0,vx:Math.cos(angle)*speed,vy:speed*0.7,r:4,color:'#a0f'});
+      break;
+    }
+    case'random':{
+      bullets.push({x:Math.random()*W,y:-10,vx:(Math.random()-0.5)*2,vy:speed*0.6,r:6,color:'#ff5'});
+      break;
+    }
+  }
+}
+
+function update(){
+  if(!alive)return;
+  // player follows mouse smoothly
+  player.x+=(mouseX-player.x)*0.15;
+  player.y+=(mouseY-player.y)*0.15;
+  player.x=Math.max(player.r,Math.min(W-player.r,player.x));
+  player.y=Math.max(player.r,Math.min(H-player.r,player.y));
+  // spawn bullets
+  spawnRate=Math.max(5,30-Math.floor((Date.now()-startTime)/5000));
+  if(Math.random()<1/spawnRate)spawnBullet();
+  // update bullets
+  for(let i=bullets.length-1;i>=0;i--){
+    const b=bullets[i];
+    b.x+=b.vx;b.y+=b.vy;
+    if(b.x<-20||b.x>W+20||b.y<-20||b.y>H+20){bullets.splice(i,1);continue}
+    // collision
+    const dx=b.x-player.x,dy=b.y-player.y;
+    if(Math.sqrt(dx*dx+dy*dy)<b.r+player.r){
+      alive=false;
+      spawnParticles(player.x,player.y,'#f55',20);
+      const time=Math.floor((Date.now()-startTime)/1000);
+      score=time;
+      if(score>best){best=score;localStorage.setItem('dodge_best',best);document.getElementById('best').textContent=best}
+      document.getElementById('olMsg').textContent=`存活: ${time}秒 | 分数: ${score}`;
+      document.getElementById('overlay').classList.add('show');
+      return;
+    }
+  }
+  // particles
+  for(let i=particles.length-1;i>=0;i--){
+    particles[i].x+=particles[i].dx;particles[i].y+=particles[i].dy;particles[i].life--;
+    if(particles[i].life<=0)particles.splice(i,1);
+  }
+  const time=Math.floor((Date.now()-startTime)/1000);
+  document.getElementById('timer').textContent=time;
+  document.getElementById('score').textContent=time;
+}
+
+function render(){
+  ctx.fillStyle='rgba(10,10,20,0.2)';ctx.fillRect(0,0,W,H);
+  // bullets
+  for(const b of bullets){
+    ctx.fillStyle=b.color;
+    ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=b.color+'40';
+    ctx.beginPath();ctx.arc(b.x,b.y,b.r*2,0,Math.PI*2);ctx.fill();
+  }
+  // player
+  if(alive){
+    ctx.fillStyle='rgba(90,130,255,0.2)';
+    ctx.beginPath();ctx.arc(player.x,player.y,player.r*3,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#5af';
+    ctx.beginPath();ctx.arc(player.x,player.y,player.r,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';
+    ctx.beginPath();ctx.arc(player.x,player.y,player.r*0.4,0,Math.PI*2);ctx.fill();
+  }
+  // particles
+  for(const p of particles){
+    ctx.globalAlpha=p.life/25;ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+function spawnParticles(x,y,color,n){
+  for(let i=0;i<n;i++)particles.push({x,y,dx:(Math.random()-0.5)*6,dy:(Math.random()-0.5)*6,life:25,color,r:Math.random()*3+1});
+}
+
+canvas.addEventListener('mousemove',e=>{
+  const rect=canvas.getBoundingClientRect();
+  mouseX=(e.clientX-rect.left)*(W/rect.width);
+  mouseY=(e.clientY-rect.top)*(H/rect.height);
+});
+canvas.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  const rect=canvas.getBoundingClientRect();
+  mouseX=(e.touches[0].clientX-rect.left)*(W/rect.width);
+  mouseY=(e.touches[0].clientY-rect.top)*(H/rect.height);
+},{passive:false});
+
+function loop(){update();render();if(alive)requestAnimationFrame(loop)}
+
+newGame();
+</script>
+</body>
+</html>

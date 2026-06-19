@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔴🟡 四子棋</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e1a;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#c8d0e0}
+h1{font-size:28px;color:#5bf;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px;align-items:center}
+#info .turn{display:flex;align-items:center;gap:6px}
+#info .disc{width:20px;height:20px;border-radius:50%}
+#board{background:#2a4a8a;border-radius:12px;padding:10px;display:grid;grid-template-columns:repeat(7,56px);grid-template-rows:repeat(6,56px);gap:6px;box-shadow:0 0 30px rgba(42,74,138,0.3)}
+.cell{background:#1a2a4a;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;position:relative}
+.cell:hover{background:#2a3a5a}
+.cell .disc{width:44px;height:44px;border-radius:50%;transition:all .2s}
+.cell .disc.red{background:radial-gradient(circle at 35% 35%,#ff6b6b,#e74c3c);box-shadow:0 2px 8px rgba(231,76,60,0.4)}
+.cell .disc.yellow{background:radial-gradient(circle at 35% 35%,#ffe66d,#f1c40f);box-shadow:0 2px 8px rgba(241,196,15,0.4)}
+.cell .disc.win{animation:pulse 0.5s infinite alternate}
+@keyframes pulse{from{transform:scale(1)}to{transform:scale(1.1)}}
+#colIndicators{display:grid;grid-template-columns:repeat(7,56px);gap:6px;padding:0 10px;margin-bottom:4px}
+.col-ind{height:20px;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;opacity:0;transition:opacity .15s}
+.col-ind:hover{opacity:1}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a2a4a;color:#5bf;border:1px solid #2a3a6a;border-radius:6px;cursor:pointer;font-size:12px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#5bf;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🔴🟡 四子棋</h1>
+<div id="info">
+  <div class="turn"><div class="disc" id="turnDisc" style="background:#e74c3c"></div><span id="turnText">红方回合</span></div>
+  <div>模式: <select id="mode" onchange="newGame()"><option value="pvp">双人</option><option value="easy">简单AI</option><option value="hard">困难AI</option></select></div>
+</div>
+<div id="colIndicators"></div>
+<div id="board"></div>
+<div id="controls">
+  <button onclick="newGame()">新游戏</button>
+  <button onclick="undoMove()">↩ 撤销</button>
+</div>
+<div id="overlay">
+  <h2 id="olTitle">🎉 胜利！</h2>
+  <p id="olMsg"></p>
+  <button onclick="newGame()">再来一局</button>
+</div>
+<script>
+const ROWS=6,COLS=7;
+let grid,current,gameOver,history,winCells;
+
+function newGame(){
+  grid=Array.from({length:ROWS},()=>Array(COLS).fill(0));
+  current=1;gameOver=false;history=[];winCells=[];
+  document.getElementById('overlay').classList.remove('show');
+  renderBoard();updateTurn();renderIndicators();
+}
+
+function renderBoard(){
+  const board=document.getElementById('board');
+  board.innerHTML='';
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      const cell=document.createElement('div');
+      cell.className='cell';
+      if(grid[r][c]!==0){
+        const disc=document.createElement('div');
+        disc.className='disc '+(grid[r][c]===1?'red':'yellow');
+        if(winCells.some(wr=>wr[0]===r&&wr[1]===c))disc.classList.add('win');
+        cell.appendChild(disc);
+      }
+      cell.addEventListener('click',()=>dropPiece(c));
+      board.appendChild(cell);
+    }
+  }
+}
+
+function renderIndicators(){
+  const el=document.getElementById('colIndicators');
+  el.innerHTML='';
+  for(let c=0;c<COLS;c++){
+    const ind=document.createElement('div');
+    ind.className='col-ind';ind.textContent='▼';
+    ind.style.color=current===1?'#e74c3c':'#f1c40f';
+    el.appendChild(ind);
+  }
+}
+
+function dropPiece(col){
+  if(gameOver)return;
+  const mode=document.getElementById('mode').value;
+  if(mode!=='pvp'&&current===2)return; // AI's turn
+  if(!makeMove(col,current))return;
+  if(checkWin(current)){endGame(current);return}
+  if(isDraw()){endGame(0);return}
+  current=current===1?2:1;
+  updateTurn();renderIndicators();
+  // AI move
+  if(mode!=='pvp'&&current===2&&!gameOver){
+    setTimeout(()=>aiMove(mode),300);
+  }
+}
+
+function makeMove(col,player){
+  for(let r=ROWS-1;r>=0;r--){
+    if(grid[r][col]===0){
+      history.push({col,player,r});
+      grid[r][col]=player;
+      renderBoard();
+      return true;
+    }
+  }
+  return false;
+}
+
+function undoMove(){
+  if(!history.length||gameOver)return;
+  const mode=document.getElementById('mode').value;
+  const steps=mode!=='pvp'?2:1;
+  for(let i=0;i<steps&&history.length;i++){
+    const h=history.pop();
+    grid[h.r][h.col]=0;
+    current=h.player;
+  }
+  renderBoard();updateTurn();renderIndicators();
+}
+
+function aiMove(diff){
+  if(gameOver)return;
+  let col;
+  if(diff==='hard'){
+    col=aiMinMax(4,true).col;
+  }else{
+    // simple: block wins, then random
+    col=aiSimple();
+  }
+  if(col===undefined||col===null)col=Math.floor(Math.random()*COLS);
+  if(!makeMove(col,2))return;
+  if(checkWin(2)){endGame(2);return}
+  if(isDraw()){endGame(0);return}
+  current=1;
+  updateTurn();renderIndicators();
+}
+
+function aiSimple(){
+  // try to win
+  for(let c=0;c<COLS;c++){
+    const r=getDropRow(c);if(r<0)continue;
+    grid[r][c]=2;if(checkWin(2)){grid[r][c]=0;return c}grid[r][c]=0;
+  }
+  // block player win
+  for(let c=0;c<COLS;c++){
+    const r=getDropRow(c);if(r<0)continue;
+    grid[r][c]=1;if(checkWin(1)){grid[r][c]=0;return c}grid[r][c]=0;
+  }
+  // prefer center
+  const center=[3,2,4,1,5,0,6];
+  for(const c of center){if(getDropRow(c)>=0)return c}
+  return null;
+}
+
+function getDropRow(col){
+  for(let r=ROWS-1;r>=0;r--){if(grid[r][col]===0)return r}
+  return-1;
+}
+
+function aiMinMax(depth,isMax){
+  if(depth===0)return{score:evaluate(),col:0};
+  const player=isMax?2:1;
+  let bestScore=isMax?-Infinity:Infinity,bestCol=0;
+  for(let c=0;c<COLS;c++){
+    const r=getDropRow(c);if(r<0)continue;
+    grid[r][c]=player;
+    if(checkWin(player)){grid[r][c]=0;return{score:isMax?1000+depth:-1000-depth,col:c}}
+    const{score}=aiMinMax(depth-1,!isMax);
+    grid[r][c]=0;
+    if(isMax&&score>bestScore){bestScore=score;bestCol=c}
+    if(!isMax&&score<bestScore){bestScore=score;bestCol=c}
+  }
+  return{score:bestScore,col:bestCol};
+}
+
+function evaluate(){
+  let score=0;
+  // center preference
+  for(let r=0;r<ROWS;r++){if(grid[r][3]===2)score+=3;if(grid[r][3]===1)score-=3}
+  // count windows
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    const dirs=[[0,1],[1,0],[1,1],[1,-1]];
+    for(const[dr,dc]of dirs){
+      let red=0,yellow=0;
+      for(let i=0;i<4;i++){
+        const nr=r+dr*i,nc=c+dc*i;
+        if(nr<0||nr>=ROWS||nc<0||nc>=COLS)break;
+        if(grid[nr][nc]===1)red++;else if(grid[nr][nc]===2)yellow++;
+      }
+      if(red===0&&yellow>0)score+=yellow*yellow;
+      if(yellow===0&&red>0)score-=red*red;
+    }
+  }
+  return score;
+}
+
+function checkWin(player){
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    if(grid[r][c]!==player)continue;
+    const dirs=[[0,1],[1,0],[1,1],[1,-1]];
+    for(const[dr,dc]of dirs){
+      const cells=[[r,c]];
+      for(let i=1;i<4;i++){
+        const nr=r+dr*i,nc=c+dc*i;
+        if(nr<0||nr>=ROWS||nc<0||nc>=COLS||grid[nr][nc]!==player)break;
+        cells.push([nr,nc]);
+      }
+      if(cells.length===4){winCells=cells;return true}
+    }
+  }
+  return false;
+}
+
+function isDraw(){return grid[0].every(c=>c!==0)}
+
+function endGame(winner){
+  gameOver=true;
+  renderBoard();
+  const ol=document.getElementById('overlay');
+  const title=document.getElementById('olTitle');
+  const msg=document.getElementById('olMsg');
+  if(winner===0){title.textContent='🤝 平局！';title.style.color='#888';msg.textContent='旗鼓相当'}
+  else{title.textContent=(winner===1?'🔴 红方':'🟡 黄方')+'胜利！';title.style.color=winner===1?'#e74c3c':'#f1c40f';msg.textContent='四子连珠！'}
+  ol.classList.add('show');
+}
+
+function updateTurn(){
+  const disc=document.getElementById('turnDisc');
+  const text=document.getElementById('turnText');
+  disc.style.background=current===1?'#e74c3c':'#f1c40f';
+  text.textContent=current===1?'红方回合':'黄方回合';
+}
+
+newGame();
+</script>
+</body>
+</html>

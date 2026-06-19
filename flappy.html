@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐦 Flappy Bird</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e1a;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#c8d0e0}
+h1{font-size:28px;color:#ffd700;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #2a3a4a;border-radius:8px;box-shadow:0 0 30px rgba(255,215,0,0.1);cursor:pointer}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#ffd700;color:#111;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🐦 Flappy Bird</h1>
+<div id="info">
+  <div>分数: <span class="val" id="score">0</span></div>
+  <div>最高: <span class="val" id="best">0</span></div>
+</div>
+<canvas id="game"></canvas>
+<div id="overlay">
+  <h2 id="olTitle" style="color:#e74c3c">💀 Game Over</h2>
+  <p id="olMsg"></p>
+  <button onclick="init()">再来一次</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=400,H=600;
+canvas.width=W;canvas.height=H;
+
+const GRAVITY=0.35,JUMP=-6.5,PIPE_W=52,GAP=150,PIPE_SPEED=2.5,PIPE_INTERVAL=1800;
+let bird,pipes,score,alive,started,best,stars,clouds;
+
+best=parseInt(localStorage.getItem('flappy_best')||'0');
+document.getElementById('best').textContent=best;
+
+function init(){
+  bird={x:80,y:H/2,vy:0,r:15,rotation:0};
+  pipes=[];score=0;alive=true;started=false;
+  stars=Array.from({length:30},()=>({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.5+0.5,b:Math.random()}));
+  clouds=Array.from({length:5},()=>({x:Math.random()*W,y:Math.random()*H*0.4,w:Math.random()*60+40,speed:Math.random()*0.3+0.1}));
+  document.getElementById('overlay').classList.remove('show');
+  render();
+}
+
+function flap(){
+  if(!alive)return;
+  if(!started){started=true;setInterval(spawnPipe,PIPE_INTERVAL)}
+  bird.vy=JUMP;
+}
+
+function spawnPipe(){
+  if(!alive)return;
+  const gapY=Math.random()*(H-GAP-100)+50;
+  pipes.push({x:W,gapY,scored:false});
+}
+
+let lastTime=0;
+function loop(ts){
+  const dt=Math.min((ts-lastTime)/1000,0.033);lastTime=ts;
+  if(started&&alive)update();
+  render();
+  requestAnimationFrame(loop);
+}
+
+function update(){
+  // bird physics
+  bird.vy+=GRAVITY;
+  bird.y+=bird.vy;
+  bird.rotation=Math.min(bird.vy*3,90);
+  // pipes
+  for(let i=pipes.length-1;i>=0;i--){
+    const p=pipes[i];
+    p.x-=PIPE_SPEED;
+    if(p.x+PIPE_W<0){pipes.splice(i,1);continue}
+    // scoring
+    if(!p.scored&&p.x+PIPE_W<bird.x){p.scored=true;score++;document.getElementById('score').textContent=score}
+    // collision
+    if(bird.x+bird.r>p.x&&bird.x-bird.r<p.x+PIPE_W){
+      if(bird.y-bird.r<p.gapY||bird.y+bird.r>p.gapY+GAP){die();return}
+    }
+  }
+  // floor/ceiling
+  if(bird.y+bird.r>H||bird.y-bird.r<0)die();
+  // clouds
+  for(const c of clouds){c.x-=c.speed;if(c.x+c.w<0)c.x=W+c.w}
+}
+
+function die(){
+  alive=false;
+  if(score>best){best=score;localStorage.setItem('flappy_best',best);document.getElementById('best').textContent=best}
+  document.getElementById('olMsg').textContent=`分数: ${score}`;
+  document.getElementById('overlay').classList.add('show');
+}
+
+function render(){
+  // sky gradient
+  const grad=ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'#1a1a3a');grad.addColorStop(0.7,'#0a0a1a');grad.addColorStop(1,'#1a2a1a');
+  ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
+  // stars
+  for(const s of stars){
+    ctx.fillStyle=`rgba(255,255,200,${0.3+s.b*0.7})`;
+    ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();
+  }
+  // clouds
+  for(const c of clouds){
+    ctx.fillStyle='rgba(255,255,255,0.04)';
+    ctx.beginPath();ctx.arc(c.x,c.y,c.w*0.4,0,Math.PI*2);ctx.arc(c.x+c.w*0.3,c.y-c.w*0.1,c.w*0.3,0,Math.PI*2);ctx.fill();
+  }
+  // pipes
+  for(const p of pipes){
+    // top pipe
+    const topGrad=ctx.createLinearGradient(p.x,0,p.x+PIPE_W,0);
+    topGrad.addColorStop(0,'#2a6a2a');topGrad.addColorStop(0.5,'#3a8a3a');topGrad.addColorStop(1,'#2a6a2a');
+    ctx.fillStyle=topGrad;
+    ctx.fillRect(p.x,0,PIPE_W,p.gapY);
+    ctx.fillStyle='#1a5a1a';ctx.fillRect(p.x-3,p.gapY-20,PIPE_W+6,20);
+    // bottom pipe
+    ctx.fillStyle=topGrad;
+    ctx.fillRect(p.x,p.gapY+GAP,PIPE_W,H-p.gapY-GAP);
+    ctx.fillStyle='#1a5a1a';ctx.fillRect(p.x-3,p.gapY+GAP,PIPE_W+6,20);
+  }
+  // ground
+  ctx.fillStyle='#2a4a2a';ctx.fillRect(0,H-10,W,10);
+  // bird
+  ctx.save();
+  ctx.translate(bird.x,bird.y);
+  ctx.rotate(bird.rotation*Math.PI/180);
+  // body
+  ctx.fillStyle='#ffd700';
+  ctx.beginPath();ctx.arc(0,0,bird.r,0,Math.PI*2);ctx.fill();
+  // wing
+  ctx.fillStyle='#f80';
+  const wingY=Math.sin(Date.now()/80)*5;
+  ctx.beginPath();ctx.ellipse(-3,wingY-2,10,5,-0.2,0,Math.PI*2);ctx.fill();
+  // eye
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(6,-4,5,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#000';ctx.beginPath();ctx.arc(8,-4,2.5,0,Math.PI*2);ctx.fill();
+  // beak
+  ctx.fillStyle='#f52';
+  ctx.beginPath();ctx.moveTo(bird.r-2,-2);ctx.lineTo(bird.r+8,0);ctx.lineTo(bird.r-2,3);ctx.fill();
+  ctx.restore();
+  // score display
+  if(started){
+    ctx.fillStyle='rgba(255,255,255,0.8)';ctx.font='bold 36px sans-serif';ctx.textAlign='center';
+    ctx.fillText(score,W/2,60);ctx.textAlign='left';
+  }else{
+    ctx.fillStyle='rgba(255,255,255,0.6)';ctx.font='18px sans-serif';ctx.textAlign='center';
+    ctx.fillText('点击或按空格开始',W/2,H/2+60);ctx.textAlign='left';
+  }
+}
+
+canvas.addEventListener('click',flap);
+document.addEventListener('keydown',e=>{if(e.key===' '||e.key==='ArrowUp'){e.preventDefault();flap()}});
+
+init();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

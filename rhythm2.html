@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎪 音乐节拍</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#f5f;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #3a2a3a;border-radius:8px;box-shadow:0 0 30px rgba(255,90,255,0.1)}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#f5f;border:1px solid #3a2a3a;border-radius:6px;cursor:pointer;font-size:12px}
+#keys{display:flex;gap:8px;margin-top:8px}
+.key-hint{width:50px;height:50px;display:flex;align-items:center;justify-content:center;background:#1a1a2e;border:2px solid #3a2a3a;border-radius:8px;font-size:18px;font-weight:bold;color:#888;transition:all .1s}
+.key-hint.active{border-color:#f5f;color:#f5f;background:#2a1a2e;transform:scale(0.95)}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#f5f;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🎸 音乐节拍</h1>
+<div id="info">
+  <div>分数: <span class="val" id="score">0</span></div>
+  <div>连击: <span class="val" id="combo">0</span></div>
+  <div>Perfect: <span class="val" id="perfect">0</span></div>
+  <div>Miss: <span class="val" id="misses">0</span></div>
+</div>
+<canvas id="game"></canvas>
+<div id="keys">
+  <div class="key-hint" id="k0">D</div>
+  <div class="key-hint" id="k1">F</div>
+  <div class="key-hint" id="k2">J</div>
+  <div class="key-hint" id="k3">K</div>
+</div>
+<div id="controls">
+  <select id="difficulty" onchange="newGame()"><option value="easy">慢速</option><option value="medium" selected>中速</option><option value="hard">快速</option></select>
+  <button onclick="newGame()">开始</button>
+</div>
+<div id="overlay">
+  <h2 id="olTitle">🎵 演奏结束！</h2>
+  <p id="olMsg"></p>
+  <button onclick="newGame()">再来一次</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=280,H=500;
+canvas.width=W;canvas.height=H;
+
+const LANES=4,LANE_W=W/LANES,LINE_Y=H-60;
+const KEYS=['d','f','j','k'];
+const COLORS=['#e74c3c','#3498db','#2ecc71','#f1c40f'];
+let notes,score,combo,maxCombo,perfectCount,missCount,alive,startTime,speed;
+
+function newGame(){
+  notes=[];score=0;combo=0;maxCombo=0;perfectCount=0;missCount=0;alive=true;
+  speed={easy:2,medium:3.5,hard:5}[document.getElementById('difficulty').value];
+  startTime=Date.now();
+  document.getElementById('overlay').classList.remove('show');
+  const noteCount=40+Math.floor(Math.random()*20);
+  for(let i=0;i<noteCount;i++){
+    const lane=Math.floor(Math.random()*LANES);
+    const time=1000+i*(600/speed*1.5)+Math.random()*200;
+    notes.push({lane,time,hit:false,missed:false,y:-20});
+  }
+  if(window._loop)cancelAnimationFrame(window._loop);
+  lastTime=performance.now();
+  function loop(ts){update(ts);render();if(alive)window._loop=requestAnimationFrame(loop)}
+  window._loop=requestAnimationFrame(loop);
+}
+
+let lastTime=0;
+function update(ts){
+  if(!alive)return;
+  const dt=Math.min((ts-lastTime)/1000,0.05);lastTime=ts;
+  const elapsed=Date.now()-startTime;
+  for(const n of notes){
+    if(n.hit||n.missed)continue;
+    n.y=LINE_Y-(n.time-elapsed)*speed*0.001*H/500;
+    if(n.y>H+20&&!n.hit){n.missed=true;combo=0;missCount++}
+  }
+  if(notes.every(n=>n.hit||n.missed)){
+    alive=false;
+    document.getElementById('olMsg').textContent=`分数: ${score} | Perfect: ${perfectCount} | 最大连击: ${maxCombo}`;
+    document.getElementById('overlay').classList.add('show');
+  }
+  updateInfo();
+}
+
+function render(){
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
+  for(let i=0;i<LANES;i++){
+    ctx.fillStyle=i%2===0?'#12121e':'#16162a';
+    ctx.fillRect(i*LANE_W,0,LANE_W,H);
+    ctx.strokeStyle='#2a2a3e';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(i*LANE_W,0);ctx.lineTo(i*LANE_W,H);ctx.stroke();
+  }
+  ctx.strokeStyle='#ffd700';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(0,LINE_Y);ctx.lineTo(W,LINE_Y);ctx.stroke();
+  ctx.fillStyle='rgba(255,215,0,0.05)';ctx.fillRect(0,LINE_Y-10,W,20);
+  for(const n of notes){
+    if(n.hit||n.missed)continue;
+    if(n.y<-20||n.y>H+20)continue;
+    const x=n.lane*LANE_W+8;
+    ctx.fillStyle=COLORS[n.lane];
+    ctx.beginPath();ctx.roundRect(x,n.y-8,LANE_W-16,16,6);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.15)';
+    ctx.beginPath();ctx.roundRect(x,n.y-8,LANE_W-16,6,6);ctx.fill();
+  }
+  for(const n of notes){
+    if(!n.hit)continue;
+    const age=(Date.now()-n.hitTime)/300;
+    if(age>1)continue;
+    const alpha=1-age;
+    const x=n.lane*LANE_W+LANE_W/2;
+    ctx.globalAlpha=alpha;
+    ctx.fillStyle='#ffd700';
+    ctx.font='bold 14px sans-serif';ctx.textAlign='center';
+    ctx.fillText(n.rating,x,LINE_Y-20-age*30);
+    ctx.globalAlpha=1;ctx.textAlign='left';
+  }
+}
+
+function hitNote(lane){
+  if(!alive)return;
+  const elapsed=Date.now()-startTime;
+  document.getElementById('k'+lane).classList.add('active');
+  setTimeout(()=>document.getElementById('k'+lane).classList.remove('active'),100);
+  let best=null,bestDist=Infinity;
+  for(const n of notes){
+    if(n.hit||n.missed||n.lane!==lane)continue;
+    const dist=Math.abs(n.y-LINE_Y);
+    if(dist<bestDist){best=n;bestDist=dist}
+  }
+  if(!best)return;
+  if(bestDist>60)return;
+  best.hit=true;best.hitTime=Date.now();
+  let pts=0,rating='';
+  if(bestDist<10){pts=100;rating='Perfect!';perfectCount++}
+  else if(bestDist<25){pts=70;rating='Great!'}
+  else if(bestDist<40){pts=40;rating='Good'}
+  else{pts=10;rating='OK'}
+  combo++;maxCombo=Math.max(maxCombo,combo);
+  score+=pts*(1+Math.floor(combo/10)*0.5);
+  best.rating=rating;
+}
+
+document.addEventListener('keydown',e=>{
+  const idx=KEYS.indexOf(e.key.toLowerCase());
+  if(idx>=0){e.preventDefault();hitNote(idx)}
+});
+
+newGame();
+</script>
+</body>
+</html>

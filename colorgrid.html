@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎪 魔术方块</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#ffd700;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #2a2a3e;border-radius:8px;box-shadow:0 0 30px rgba(255,215,0,0.1);cursor:pointer}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#ffd700;border:1px solid #2a2a3e;border-radius:6px;cursor:pointer;font-size:12px}
+#msg{margin-top:8px;font-size:12px;color:#888}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;color:#ffd700;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#ffd700;color:#111;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🎪 魔术方块</h1>
+<div id="info">
+  <div>步数: <span class="val" id="moves">0</span></div>
+  <div>时间: <span class="val" id="timer">0:00</span></div>
+</div>
+<canvas id="game"></canvas>
+<div id="msg">点击色块，再点击目标位置交换 · 让每行每列颜色一致</div>
+<div id="controls">
+  <select id="size" onchange="newGame()"><option value="3">3×3</option><option value="4" selected>4×4</option><option value="5">5×5</option></select>
+  <button onclick="newGame()">新游戏</button>
+  <button onclick="shuffleBoard()">🔀 打乱</button>
+</div>
+<div id="overlay">
+  <h2>🎉 完成！</h2>
+  <p id="olMsg"></p>
+  <button onclick="newGame()">再来一局</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+
+const COLORS=['#e74c3c','#3498db','#2ecc71','#f1c40f','#9b59b6'];
+let grid,size,cellSize,selected,moves,startTime,timerInterval;
+
+function newGame(){
+  size=parseInt(document.getElementById('size').value);
+  cellSize=Math.min(70,Math.floor(400/size));
+  canvas.width=size*cellSize;canvas.height=size*cellSize;
+  // create solved grid
+  grid=Array.from({length:size},(_,r)=>Array.from({length:size},(_,c)=>COLORS[r%COLORS.length]));
+  selected=null;moves=0;
+  clearInterval(timerInterval);startTime=Date.now();
+  timerInterval=setInterval(()=>{
+    const t=Math.floor((Date.now()-startTime)/1000);
+    document.getElementById('timer').textContent=`${Math.floor(t/60)}:${String(t%60).padStart(2,'0')}`;
+  },1000);
+  document.getElementById('overlay').classList.remove('show');
+  shuffleBoard();
+}
+
+function shuffleBoard(){
+  // make random swaps
+  for(let i=0;i<size*size*10;i++){
+    const r1=Math.floor(Math.random()*size),c1=Math.floor(Math.random()*size);
+    const r2=Math.floor(Math.random()*size),c2=Math.floor(Math.random()*size);
+    [grid[r1][c1],grid[r2][c2]]=[grid[r2][c2],grid[r1][c1]];
+  }
+  moves=0;selected=null;
+  render();updateInfo();
+}
+
+function checkWin(){
+  // check rows
+  for(let r=0;r<size;r++){
+    const color=grid[r][0];
+    if(grid[r].some(c=>c!==color))return false;
+  }
+  // check columns
+  for(let c=0;c<size;c++){
+    const color=grid[0][c];
+    for(let r=1;r<size;r++){if(grid[r][c]!==color)return false}
+  }
+  return true;
+}
+
+function render(){
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,canvas.width,canvas.height);
+  for(let r=0;r<size;r++){
+    for(let c=0;c<size;c++){
+      const x=c*cellSize,y=r*cellSize;
+      ctx.fillStyle=grid[r][c];
+      ctx.beginPath();ctx.roundRect(x+2,y+2,cellSize-4,cellSize-4,6);ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,0.1)';
+      ctx.beginPath();ctx.roundRect(x+2,y+2,cellSize-4,cellSize/3,6);ctx.fill();
+      if(selected&&selected[0]===r&&selected[1]===c){
+        ctx.strokeStyle='#ffd700';ctx.lineWidth=3;
+        ctx.beginPath();ctx.roundRect(x+1,y+1,cellSize-2,cellSize-2,6);ctx.stroke();
+      }
+    }
+  }
+}
+
+canvas.addEventListener('click',e=>{
+  const rect=canvas.getBoundingClientRect();
+  const c=Math.floor((e.clientX-rect.left)/cellSize);
+  const r=Math.floor((e.clientY-rect.top)/cellSize);
+  if(r<0||r>=size||c<0||c>=size)return;
+  if(!selected){
+    selected=[r,c];
+  }else{
+    if(selected[0]===r&&selected[1]===c){selected=null}
+    else{
+      [grid[selected[0]][selected[1]],grid[r][c]]=[grid[r][c],grid[selected[0]][selected[1]]];
+      selected=null;moves++;
+      if(checkWin()){
+        clearInterval(timerInterval);
+        const time=Math.floor((Date.now()-startTime)/1000);
+        document.getElementById('olMsg').textContent=`步数: ${moves} | 用时: ${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}`;
+        document.getElementById('overlay').classList.add('show');
+      }
+    }
+  }
+  render();updateInfo();
+});
+
+function updateInfo(){document.getElementById('moves').textContent=moves}
+
+newGame();
+</script>
+</body>
+</html>

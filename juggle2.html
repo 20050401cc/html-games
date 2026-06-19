@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎪 杂技球</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#ffd700;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #2a2a3e;border-radius:8px;box-shadow:0 0 30px rgba(255,215,0,0.1);cursor:pointer}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#ffd700;border:1px solid #2a2a3e;border-radius:6px;cursor:pointer;font-size:12px}
+</style>
+</head>
+<body>
+<h1>🎪 杂技球</h1>
+<div id="info">
+  <div>分数: <span class="val" id="score">0</span></div>
+  <div>球数: <span class="val" id="count">0</span></div>
+  <div>最高: <span class="val" id="best">0</span></div>
+</div>
+<canvas id="game"></canvas>
+<div id="controls">
+  <button onclick="addBall()">➕ 加球</button>
+  <button onclick="clearBalls()">🗑️ 清空</button>
+  <button onclick="toggleGravity()">🌍 重力</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=500,H=500;
+canvas.width=W;canvas.height=H;
+
+const GRAVITY=0.15;
+let balls,paddles,score,gravityOn,mouseX;
+let best=parseInt(localStorage.getItem('juggle2_best')||'0');
+document.getElementById('best').textContent=best;
+
+function init(){
+  balls=[];score=0;gravityOn=true;mouseX=W/2;
+  paddles=[
+    {x:W/2,y:H-40,w:70,h:10,color:'#ffd700'},
+    {x:W/4,y:H/2,w:50,h:8,color:'#5bf'},
+    {x:W*3/4,y:H/2,w:50,h:8,color:'#f5a'},
+  ];
+  addBall();updateInfo();
+}
+
+function addBall(){
+  const colors=['#f55','#5f5','#55f','#ff5','#f5f','#5ff','#fa0'];
+  balls.push({
+    x:W/2,y:100,
+    vx:(Math.random()-0.5)*4,vy:0,
+    r:8+Math.random()*6,
+    color:colors[Math.floor(Math.random()*colors.length)],
+    bounces:0,
+  });
+  updateInfo();
+}
+
+function clearBalls(){balls=[];score=0;updateInfo()}
+function toggleGravity(){gravityOn=!gravityOn}
+
+function update(){
+  for(const b of balls){
+    if(gravityOn)b.vy+=GRAVITY;
+    b.vx*=0.999;b.vy*=0.999;
+    b.x+=b.vx;b.y+=b.vy;
+    // wall bounce
+    if(b.x-b.r<0){b.x=b.r;b.vx=Math.abs(b.vx)*0.8}
+    if(b.x+b.r>W){b.x=W-b.r;b.vx=-Math.abs(b.vx)*0.8}
+    if(b.y-b.r<0){b.y=b.r;b.vy=Math.abs(b.vy)*0.8}
+    // paddle bounce
+    for(const p of paddles){
+      if(b.vy>0&&b.y+b.r>=p.y&&b.y-b.r<=p.y+p.h&&b.x>=p.x-p.w/2&&b.x<=p.x+p.w/2){
+        b.vy=-7-Math.random()*2;
+        b.vx+=(b.x-p.x)*0.12;
+        b.bounces++;
+        score+=10+b.bounces;
+      }
+    }
+    // remove if too low
+    if(b.y>H+50){
+      balls.splice(balls.indexOf(b),1);
+    }
+  }
+  // move main paddle with mouse
+  paddles[0].x+=(mouseX-paddles[0].x)*0.1;
+  paddles[0].x=Math.max(paddles[0].w/2,Math.min(W-paddles[0].w/2,paddles[0].x));
+  // auto-move side paddles
+  paddles[1].x=W/4+Math.sin(Date.now()/1000)*80;
+  paddles[2].x=W*3/4+Math.cos(Date.now()/1200)*80;
+  if(score>best){best=score;localStorage.setItem('juggle2_best',best);document.getElementById('best').textContent=best}
+  updateInfo();
+}
+
+function render(){
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
+  // background
+  const grad=ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'#1a1a3a');grad.addColorStop(1,'#0a0a1a');
+  ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
+  // paddles
+  for(const p of paddles){
+    const grad=ctx.createLinearGradient(p.x-p.w/2,p.y,p.x+p.w/2,p.y);
+    grad.addColorStop(0,p.color+'80');grad.addColorStop(0.5,p.color);grad.addColorStop(1,p.color+'80');
+    ctx.fillStyle=grad;
+    ctx.beginPath();ctx.roundRect(p.x-p.w/2,p.y,p.w,p.h,5);ctx.fill();
+  }
+  // balls
+  for(const b of balls){
+    // trail
+    ctx.fillStyle=b.color+'20';
+    ctx.beginPath();ctx.arc(b.x,b.y,b.r*2,0,Math.PI*2);ctx.fill();
+    // ball
+    const grad=ctx.createRadialGradient(b.x-b.r*0.3,b.y-b.r*0.3,b.r*0.1,b.x,b.y,b.r);
+    grad.addColorStop(0,'#fff');grad.addColorStop(0.3,b.color);grad.addColorStop(1,b.color+'80');
+    ctx.fillStyle=grad;
+    ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill();
+  }
+  // score
+  ctx.fillStyle='rgba(255,255,255,0.05)';ctx.font='bold 36px sans-serif';ctx.textAlign='center';
+  ctx.fillText(score,W/2,H/2);ctx.textAlign='left';
+}
+
+canvas.addEventListener('mousemove',e=>{
+  const rect=canvas.getBoundingClientRect();
+  mouseX=(e.clientX-rect.left)*(W/rect.width);
+});
+canvas.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  mouseX=(e.touches[0].clientX-canvas.getBoundingClientRect().left)*(W/canvas.getBoundingClientRect().width);
+},{passive:false});
+
+function updateInfo(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('count').textContent=balls.length;
+}
+
+function loop(){update();render();requestAnimationFrame(loop)}
+
+init();loop();
+</script>
+</body>
+</html>

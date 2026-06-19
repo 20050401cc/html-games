@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>💣 炸弹人</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #111;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-family: 'Segoe UI', sans-serif;
+  color: #e0e0e0;
+  overflow: hidden;
+}
+h1 { font-size: 1.8rem; margin-bottom: 8px; color: #ff6b35; }
+#info { display: flex; gap: 20px; margin-bottom: 8px; font-size: 1rem; }
+#info span { color: #ffcc00; font-weight: bold; }
+canvas {
+  border: 3px solid #ff6b35;
+  border-radius: 6px;
+  box-shadow: 0 0 25px rgba(255,107,53,0.4);
+  image-rendering: pixelated;
+}
+#ctrl { margin-top: 10px; font-size: 0.85rem; color: #888; }
+kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px 6px; color: #fff; font-size: 0.8rem; }
+#overScreen {
+  display: none; position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.92); padding: 36px 50px;
+  border-radius: 14px; text-align: center; z-index: 100;
+  border: 2px solid #ff6b35;
+}
+#overScreen h2 { font-size: 2.2rem; color: #ff6b35; margin-bottom: 8px; }
+#overScreen p { margin-bottom: 16px; font-size: 1.1rem; }
+#overScreen button {
+  background: #ff6b35; border: none; color: #fff;
+  padding: 10px 28px; font-size: 1rem; border-radius: 8px; cursor: pointer;
+}
+#overScreen button:hover { background: #ff8c5a; }
+</style>
+</head>
+<body>
+<h1>💣 炸弹人</h1>
+<div id="info">
+  <div>得分：<span id="score">0</span></div>
+  <div>炸弹：<span id="bombs">1</span></div>
+  <div>火力：<span id="power">1</span></div>
+  <div>生命：<span id="lives">3</span></div>
+</div>
+<canvas id="c" width="560" height="480"></canvas>
+<div id="ctrl">
+  <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动 &nbsp;|&nbsp; <kbd>空格</kbd> 放炸弹
+</div>
+<div id="overScreen">
+  <h2>游戏结束</h2>
+  <p>最终得分：<span id="finalScore">0</span></p>
+  <button onclick="restart()">再来一局</button>
+</div>
+
+<script>
+var cv = document.getElementById('c');
+var cx = cv.getContext('2d');
+var COLS = 14, ROWS = 12;
+var T = 40; // tile size
+var WALL = 1, BLOCK = 2;
+
+// ─── 鲜艳配色 ───
+var FLOOR  = '#3a3a4a';
+var WALL_C = '#7a8a9a';
+var WALL_L = '#92a4b6';
+var BLOCK_C = '#b8944a';
+var BLOCK_L = '#d4a85a';
+var BLOCK_LN = '#a07830';
+var BOMB_C  = '#e03030';
+var BOMB_HI = '#ff6060';
+var BOMB_FU = '#ffaa00';
+var FIRE_C  = '#ff5500';
+var FIRE_Y  = '#ffcc00';
+var PLY_C   = '#33aaff';
+var PLY_L   = '#66ccff';
+var PLY_E   = '#ffffff';
+var PLY_P   = '#1155aa';
+var ENM_C   = '#ff4444';
+var ENM_L   = '#ff7777';
+var ENM_E   = '#ffffff';
+var PORTAL  = '#44ddff';
+
+var map, pl, bombs, expos, pups, ens, parts, portal, score, lives, gOver, kf = {};
+
+function init() {
+  map = []; bombs = []; expos = []; pups = []; ens = []; parts = []; portal = null;
+  score = 0; lives = 3; gOver = false;
+
+  for (var r = 0; r < ROWS; r++) {
+    map[r] = [];
+    for (var c = 0; c < COLS; c++) {
+      if (r === 0 || r === ROWS-1 || c === 0 || c === COLS-1)
+        map[r][c] = WALL;
+      else if (r % 2 === 0 && c % 2 === 0)
+        map[r][c] = WALL;
+      else
+        map[r][c] = 0;
+    }
+  }
+  for (var r2 = 1; r2 < ROWS-1; r2++) {
+    for (var c2 = 1; c2 < COLS-1; c2++) {
+      if (map[r2][c2] !== 0) continue;
+      if (r2 <= 2 && c2 <= 2) continue;
+      if (Math.random() < 0.55) map[r2][c2] = BLOCK;
+    }
+  }
+  var epos = [[ROWS-2,COLS-2],[ROWS-2,1],[1,COLS-2],[ROWS-3,COLS-3]];
+  for (var i = 0; i < epos.length; i++) {
+    var ep = epos[i];
+    if (map[ep[0]][ep[1]] === 0)
+      ens.push({ x: ep[1]*T+T/2, y: ep[0]*T+T/2, d: Math.random()<.5?1:3, sp: 1.2, t: 0 });
+  }
+  pl = { x: T+T/2, y: T+T/2, sp: 2.5, mb: 1, ab: 0, fp: 1, inv: 0 };
+  ui();
+  document.getElementById('overScreen').style.display = 'none';
+}
+
+document.addEventListener('keydown', function(e) {
+  kf[e.key.toLowerCase()] = true;
+  if (e.key === ' ') { e.preventDefault(); placeBomb(); }
+});
+document.addEventListener('keyup', function(e) { kf[e.key.toLowerCase()] = false; });
+
+function placeBomb() {
+  if (gOver || pl.ab >= pl.mb) return;
+  var gc = Math.floor(pl.x / T), gr = Math.floor(pl.y / T);
+  for (var i = 0; i < bombs.length; i++) if (bombs[i].c === gc && bombs[i].r === gr) return;
+  bombs.push({ c: gc, r: gr, t: 80 });
+  pl.ab++;
+}
+
+function explode(b) {
+  pl.ab = Math.max(0, pl.ab - 1);
+  var dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+  addE(b.c, b.r);
+  for (var d = 0; d < 4; d++) {
+    for (var i = 1; i <= pl.fp; i++) {
+      var nc = b.c + dirs[d][0]*i, nr = b.r + dirs[d][1]*i;
+      if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) break;
+      if (map[nr][nc] === WALL) break;
+      if (map[nr][nc] === BLOCK) {
+        map[nr][nc] = 0; addE(nc, nr); score += 10;
+        dropP(nc, nr); debris(nc*T+T/2, nr*T+T/2, BLOCK_C); break;
+      }
+      for (var j = 0; j < bombs.length; j++) if (bombs[j].c===nc && bombs[j].r===nr) bombs[j].t=0;
+      addE(nc, nr);
+    }
+  }
+}
+
+function addE(c, r) { expos.push({ c:c, r:r, t:22 }); }
+
+function dropP(c, r) {
+  if (Math.random() < 0.28) {
+    var types = ['bomb','fire','speed'];
+    pups.push({ c:c, r:r, tp: types[Math.floor(Math.random()*3)] });
+  }
+}
+
+function debris(x, y, col) {
+  for (var i = 0; i < 10; i++) {
+    var a = (Math.PI*2/10)*i + Math.random()*.5;
+    var s = 1.5 + Math.random()*3;
+    parts.push({ x:x, y:y, vx:Math.cos(a)*s, vy:Math.sin(a)*s, l:25+Math.random()*15, col:col });
+  }
+}
+
+function ui() {
+  document.getElementById('score').textContent = score;
+  document.getElementById('bombs').textContent = pl.mb;
+  document.getElementById('power').textContent = pl.fp;
+  document.getElementById('lives').textContent = lives;
+}
+
+function blocked(x, y, r) {
+  var l = Math.floor((x-r)/T), ri = Math.floor((x+r)/T);
+  var t = Math.floor((y-r)/T), b = Math.floor((y+r)/T);
+  for (var row = t; row <= b; row++)
+    for (var col = l; col <= ri; col++) {
+      if (row<0||row>=ROWS||col<0||col>=COLS) return true;
+      if (map[row][col]===WALL||map[row][col]===BLOCK) return true;
+    }
+  return false;
+}
+
+// ─── UPDATE ───
+function update() {
+  if (gOver) return;
+  var dx=0, dy=0;
+  if (kf['w']||kf['arrowup']) dy=-1;
+  if (kf['s']||kf['arrowdown']) dy=1;
+  if (kf['a']||kf['arrowleft']) dx=-1;
+  if (kf['d']||kf['arrowright']) dx=1;
+  if (dx||dy) {
+    var len = Math.sqrt(dx*dx+dy*dy);
+    var nx = pl.x + (dx/len)*pl.sp;
+    var ny = pl.y + (dy/len)*pl.sp;
+    var r = T*0.35;
+    if (!blocked(nx, pl.y, r)) pl.x = nx;
+    if (!blocked(pl.x, ny, r)) pl.y = ny;
+  }
+  var pc=Math.floor(pl.x/T), pr=Math.floor(pl.y/T);
+  var kept = [];
+  for (var i = 0; i < pups.length; i++) {
+    var p = pups[i];
+    if (p.c===pc && p.r===pr) {
+      if (p.tp==='bomb') pl.mb++;
+      if (p.tp==='fire') pl.fp++;
+      if (p.tp==='speed') pl.sp=Math.min(4, pl.sp+.3);
+      score += 50;
+    } else kept.push(p);
+  }
+  pups = kept;
+
+  for (var bi = bombs.length-1; bi >= 0; bi--) {
+    bombs[bi].t--;
+    if (bombs[bi].t <= 0) { explode(bombs[bi]); bombs.splice(bi,1); }
+  }
+
+  var aE = [];
+  for (var ei = 0; ei < expos.length; ei++) {
+    expos[ei].t--;
+    if (expos[ei].t > 0) aE.push(expos[ei]);
+  }
+  expos = aE;
+
+  if (pl.inv <= 0) {
+    for (var ai = 0; ai < aE.length; ai++) {
+      if (Math.floor(pl.x/T)===aE[ai].c && Math.floor(pl.y/T)===aE[ai].r) { hurt(); break; }
+    }
+  }
+  pl.inv = Math.max(0, pl.inv-1);
+
+  for (var si = 0; si < aE.length; si++) {
+    var eai = aE[si];
+    var newEns = [];
+    for (var ej = 0; ej < ens.length; ej++) {
+      var en = ens[ej];
+      if (Math.floor(en.x/T)===eai.c && Math.floor(en.y/T)===eai.r) {
+        score += 100; debris(en.x, en.y, ENM_C);
+      } else newEns.push(en);
+    }
+    ens = newEns;
+  }
+
+  for (var ni = 0; ni < ens.length; ni++) {
+    var en2 = ens[ni];
+    en2.t++;
+    var dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+    var dd = dirs[en2.d];
+    var nx2 = en2.x + dd[0]*en2.sp;
+    var ny2 = en2.y + dd[1]*en2.sp;
+    var cr = T*0.35;
+    var can = true;
+    if (dd[0] && blocked(nx2, en2.y, cr)) can = false;
+    if (dd[1] && blocked(en2.x, ny2, cr)) can = false;
+    if (!can || en2.t > 60+Math.random()*80) { en2.d = Math.floor(Math.random()*4); en2.t = 0; }
+    else { if(dd[0]) en2.x=nx2; if(dd[1]) en2.y=ny2; }
+    if (pl.inv <= 0) {
+      var dist = Math.sqrt((en2.x-pl.x)*(en2.x-pl.x)+(en2.y-pl.y)*(en2.y-pl.y));
+      if (dist < T*.7) hurt();
+    }
+  }
+
+  for (var pi = parts.length-1; pi >= 0; pi--) {
+    parts[pi].x += parts[pi].vx; parts[pi].y += parts[pi].vy;
+    parts[pi].l--; parts[pi].vx *= .96; parts[pi].vy *= .96;
+    if (parts[pi].l <= 0) parts.splice(pi,1);
+  }
+
+  if (ens.length===0 && !portal) {
+    portal = { c:COLS-2, r:ROWS-2 };
+    if (map[portal.r][portal.c]===BLOCK) map[portal.r][portal.c]=0;
+  }
+  if (portal && Math.floor(pl.x/T)===portal.c && Math.floor(pl.y/T)===portal.r) {
+    score += 500; init(); document.getElementById('score').textContent = score;
+  }
+  ui();
+}
+
+function hurt() {
+  lives--; pl.inv = 90; debris(pl.x, pl.y, PLY_C);
+  if (lives <= 0) {
+    gOver = true;
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('overScreen').style.display = 'block';
+  }
+}
+
+// ─── DRAW ───
+function draw() {
+  // 背景
+  cx.fillStyle = FLOOR;
+  cx.fillRect(0, 0, cv.width, cv.height);
+
+  // 地图
+  for (var r = 0; r < ROWS; r++) {
+    for (var c = 0; c < COLS; c++) {
+      var x = c*T, y = r*T;
+      if (map[r][c] === WALL) {
+        cx.fillStyle = WALL_C;
+        cx.fillRect(x, y, T, T);
+        cx.fillStyle = WALL_L;
+        cx.fillRect(x+2, y+2, T-4, T-4);
+        cx.fillStyle = WALL_C;
+        cx.fillRect(x+4, y+4, T-8, T-8);
+      } else if (map[r][c] === BLOCK) {
+        cx.fillStyle = BLOCK_C;
+        cx.fillRect(x+1, y+1, T-2, T-2);
+        cx.fillStyle = BLOCK_L;
+        cx.fillRect(x+3, y+3, T-6, T/2-4);
+        cx.strokeStyle = BLOCK_LN; cx.lineWidth = 1;
+        cx.strokeRect(x+4, y+4, T/2-5, T/2-5);
+        cx.strokeRect(x+T/2, y+T/2, T/2-5, T/2-5);
+      }
+    }
+  }
+
+  // 传送门
+  if (portal) {
+    var ppx = portal.c*T+T/2, ppy = portal.r*T+T/2;
+    var tt = Date.now()/400;
+    cx.save(); cx.translate(ppx, ppy); cx.rotate(tt);
+    var grd = cx.createRadialGradient(0,0,2,0,0,T*0.45);
+    grd.addColorStop(0,'#ffffff');
+    grd.addColorStop(0.4,PORTAL);
+    grd.addColorStop(1,'rgba(68,221,255,0)');
+    cx.fillStyle = grd;
+    cx.fillRect(-T/2,-T/2,T,T);
+    cx.restore();
+  }
+
+  // 道具
+  var tick = Date.now()/200;
+  for (var i = 0; i < pups.length; i++) {
+    var pp = pups[i];
+    var px2 = pp.c*T+T/2, py2 = pp.r*T+T/2+Math.sin(tick+pp.c)*3;
+    cx.beginPath(); cx.arc(px2,py2,T*0.35,0,Math.PI*2);
+    cx.fillStyle = pp.tp==='bomb'?'#aa55ff':pp.tp==='fire'?'#ff8800':'#55ff88';
+    cx.fill(); cx.strokeStyle='#fff'; cx.lineWidth=2; cx.stroke();
+    cx.fillStyle='#fff'; cx.font='bold 16px sans-serif'; cx.textAlign='center'; cx.textBaseline='middle';
+    cx.fillText(pp.tp==='bomb'?'💣':pp.tp==='fire'?'🔥':'⚡',px2,py2);
+  }
+
+  // 炸弹
+  for (var b = 0; b < bombs.length; b++) {
+    var bb = bombs[b];
+    var bx = bb.c*T+T/2, by = bb.r*T+T/2;
+    var pulse = 1+Math.sin(bb.t*.3)*.15;
+    var br = T*.38*pulse;
+    cx.beginPath(); cx.arc(bx,by,br,0,Math.PI*2);
+    cx.fillStyle = BOMB_C; cx.fill();
+    cx.beginPath(); cx.arc(bx-4,by-6,br*.4,0,Math.PI*2);
+    cx.fillStyle = BOMB_HI; cx.fill();
+    cx.beginPath(); cx.arc(bx+br*.3,by-br*.65,3,0,Math.PI*2);
+    cx.fillStyle = BOMB_FU; cx.fill();
+  }
+
+  // 爆炸
+  for (var e = 0; e < expos.length; e++) {
+    var ee = expos[e];
+    var ex = ee.c*T, ey = ee.r*T;
+    var al = ee.t/22;
+    cx.globalAlpha = al;
+    var grd2 = cx.createRadialGradient(ex+T/2,ey+T/2,0,ex+T/2,ey+T/2,T*0.55);
+    grd2.addColorStop(0,FIRE_Y);
+    grd2.addColorStop(0.6,FIRE_C);
+    grd2.addColorStop(1,'rgba(255,40,0,0)');
+    cx.fillStyle = grd2;
+    cx.fillRect(ex-2,ey-2,T+4,T+4);
+    cx.globalAlpha = 1;
+  }
+
+  // 敌人
+  for (var ei = 0; ei < ens.length; ei++) {
+    var en = ens[ei];
+    cx.beginPath(); cx.arc(en.x,en.y,T*0.38,0,Math.PI*2);
+    cx.fillStyle = ENM_C; cx.fill();
+    cx.strokeStyle = ENM_L; cx.lineWidth=2; cx.stroke();
+    cx.fillStyle=ENM_E;
+    cx.beginPath(); cx.arc(en.x-6,en.y-4,4,0,Math.PI*2); cx.fill();
+    cx.beginPath(); cx.arc(en.x+6,en.y-4,4,0,Math.PI*2); cx.fill();
+    cx.fillStyle='#000';
+    cx.beginPath(); cx.arc(en.x-5,en.y-4,2,0,Math.PI*2); cx.fill();
+    cx.beginPath(); cx.arc(en.x+7,en.y-4,2,0,Math.PI*2); cx.fill();
+  }
+
+  // 玩家
+  if (pl.inv > 0 && Math.floor(pl.inv/4)%2===0) { /* 闪烁 */ }
+  else {
+    var ppx2=pl.x, ppy2=pl.y;
+    // 身体
+    cx.beginPath(); cx.arc(ppx2,ppy2,T*0.38,0,Math.PI*2);
+    cx.fillStyle=PLY_C; cx.fill();
+    cx.strokeStyle=PLY_L; cx.lineWidth=2.5; cx.stroke();
+    // 眼睛
+    cx.fillStyle=PLY_E;
+    cx.beginPath(); cx.arc(ppx2-6,ppy2-4,5,0,Math.PI*2); cx.fill();
+    cx.beginPath(); cx.arc(ppx2+6,ppy2-4,5,0,Math.PI*2); cx.fill();
+    cx.fillStyle='#111';
+    cx.beginPath(); cx.arc(ppx2-5,ppy2-3,2.5,0,Math.PI*2); cx.fill();
+    cx.beginPath(); cx.arc(ppx2+7,ppy2-3,2.5,0,Math.PI*2); cx.fill();
+    // 帽子
+    cx.fillStyle=PLY_P;
+    cx.beginPath(); cx.ellipse(ppx2,ppy2-T*0.3,T*0.3,6,0,0,Math.PI*2); cx.fill();
+    // 嘴
+    cx.strokeStyle='#fff'; cx.lineWidth=1.5;
+    cx.beginPath(); cx.arc(ppx2,ppy2+6,5,0,Math.PI); cx.stroke();
+  }
+
+  // 粒子
+  for (var pi2 = 0; pi2 < parts.length; pi2++) {
+    var pt = parts[pi2];
+    cx.globalAlpha = pt.l/30;
+    cx.fillStyle = pt.col;
+    cx.fillRect(pt.x-2,pt.y-2,4,4);
+  }
+  cx.globalAlpha = 1;
+}
+
+// ─── LOOP ───
+var raf;
+function loop() { update(); draw(); raf = requestAnimationFrame(loop); }
+function restart() { cancelAnimationFrame(raf); kf={}; init(); loop(); }
+restart();
+</script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🏗️ 堆叠高塔</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#ffd700;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #2a2a3e;border-radius:8px;box-shadow:0 0 30px rgba(255,215,0,0.1);cursor:pointer}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#ffd700;border:1px solid #2a2a3e;border-radius:6px;cursor:pointer;font-size:12px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#ffd700;color:#111;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🏗️ 堆叠高塔</h1>
+<div id="info">
+  <div>分数: <span class="val" id="score">0</span></div>
+  <div>层数: <span class="val" id="height">0</span></div>
+  <div>最高: <span class="val" id="best">0</span></div>
+</div>
+<canvas id="game"></canvas>
+<div id="controls">
+  <button onclick="newGame()">新游戏</button>
+</div>
+<div id="overlay">
+  <h2 id="olTitle">💀 塔倒了！</h2>
+  <p id="olMsg"></p>
+  <button onclick="newGame()">再来一次</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=300,H=500;
+canvas.width=W;canvas.height=H;
+
+const COLORS=['#e74c3c','#3498db','#2ecc71','#f1c40f','#9b59b6','#e67e22','#1abc9c','#e91e63'];
+let blocks,currentBlock,score,height,best,alive,animId;
+
+best=parseInt(localStorage.getItem('stack_best')||'0');
+document.getElementById('best').textContent=best;
+
+function newGame(){
+  blocks=[{x:W/2-60,y:H-20,w:120,h:20,color:'#555'}];
+  currentBlock={x:0,y:H-40,w:120,h:20,speed:2,dir:1,color:COLORS[0]};
+  score=0;height=0;alive=true;
+  document.getElementById('overlay').classList.remove('show');
+  updateInfo();render();
+  cancelAnimationFrame(animId);
+  animId=requestAnimationFrame(loop);
+}
+
+function loop(){
+  if(!alive)return;
+  // move current block
+  currentBlock.x+=currentBlock.speed*currentBlock.dir;
+  if(currentBlock.x+currentBlock.w>W||currentBlock.x<0)currentBlock.dir*=-1;
+  render();
+  animId=requestAnimationFrame(loop);
+}
+
+function placeBlock(){
+  if(!alive)return;
+  const last=blocks[blocks.length-1];
+  // calculate overlap
+  const overlapStart=Math.max(currentBlock.x,last.x);
+  const overlapEnd=Math.min(currentBlock.x+currentBlock.w,last.x+last.w);
+  const overlapW=overlapEnd-overlapStart;
+  if(overlapW<=0){
+    // missed completely
+    alive=false;
+    if(score>best){best=score;localStorage.setItem('stack_best',best);document.getElementById('best').textContent=best}
+    document.getElementById('olMsg').textContent=`层数: ${height} | 分数: ${score}`;
+    document.getElementById('overlay').classList.add('show');
+    return;
+  }
+  // place the overlapping part
+  const newBlock={x:overlapStart,y:last.y-currentBlock.h,w:overlapW,h:currentBlock.h,color:currentBlock.color};
+  blocks.push(newBlock);
+  score+=Math.floor(overlapW);
+  height++;
+  // camera shift
+  if(newBlock.y<H/2){
+    for(const b of blocks)b.y+=H/2-newBlock.y;
+  }
+  // next block
+  const newW=Math.max(20,overlapW-2);
+  const speed=2+height*0.2;
+  currentBlock={x:0,y:blocks[blocks.length-1].y-currentBlock.h,w:newW,h:20,speed:Math.min(speed,8),dir:1,color:COLORS[height%COLORS.length]};
+  updateInfo();
+}
+
+function render(){
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
+  // background lines
+  ctx.strokeStyle='#1a1a2e';ctx.lineWidth=0.5;
+  for(let y=0;y<H;y+=20){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+  // placed blocks
+  for(let i=1;i<blocks.length;i++){
+    const b=blocks[i];
+    ctx.fillStyle=b.color;
+    ctx.fillRect(b.x,b.y,b.w,b.h);
+    // highlight
+    ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fillRect(b.x,b.y,b.w,b.h/3);
+    // shadow
+    ctx.fillStyle='rgba(0,0,0,0.2)';ctx.fillRect(b.x,b.y+b.h-3,b.w,3);
+  }
+  // current block
+  if(alive){
+    ctx.fillStyle=currentBlock.color;
+    ctx.fillRect(currentBlock.x,currentBlock.y,currentBlock.w,currentBlock.h);
+    ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(currentBlock.x,currentBlock.y,currentBlock.w,currentBlock.h/3);
+    // guide line
+    ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.moveTo(currentBlock.x+currentBlock.w/2,0);ctx.lineTo(currentBlock.x+currentBlock.w/2,H);ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // score display
+  ctx.fillStyle='rgba(255,255,255,0.05)';ctx.font='bold 48px sans-serif';ctx.textAlign='center';
+  ctx.fillText(score,W/2,H/2);ctx.textAlign='left';
+}
+
+function updateInfo(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('height').textContent=height;
+}
+
+canvas.addEventListener('click',placeBlock);
+document.addEventListener('keydown',e=>{
+  if(e.key===' '||e.key==='Enter'){e.preventDefault();placeBlock()}
+});
+
+newGame();
+</script>
+</body>
+</html>

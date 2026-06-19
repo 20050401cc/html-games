@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎹 钢琴</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#ffd700;margin-bottom:12px}
+#piano{display:flex;position:relative;height:200px}
+.white-key{width:50px;height:200px;background:linear-gradient(180deg,#f8f8f8,#e8e8e8);border:1px solid #aaa;border-radius:0 0 6px 6px;cursor:pointer;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;font-size:11px;color:#888;position:relative;z-index:1;transition:background .1s}
+.white-key:hover{background:linear-gradient(180deg,#eee,#ddd)}
+.white-key.active{background:linear-gradient(180deg,#ffd700,#daa520)}
+.black-key{width:30px;height:130px;background:linear-gradient(180deg,#333,#111);border:1px solid #000;border-radius:0 0 4px 4px;cursor:pointer;position:absolute;z-index:2;transition:background .1s}
+.black-key:hover{background:linear-gradient(180deg,#444,#222)}
+.black-key.active{background:linear-gradient(180deg,#ffd700,#b8860b)}
+#info{margin-top:16px;display:flex;gap:16px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#ffd700;border:1px solid #2a2a3e;border-radius:6px;cursor:pointer;font-size:12px}
+#msg{margin-top:8px;font-size:12px;color:#888}
+#recording{margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;justify-content:center;max-width:500px}
+.note-chip{padding:2px 8px;background:#1a1a2e;border-radius:4px;font-size:11px;color:#ffd700}
+</style>
+</head>
+<body>
+<h1>🎹 钢琴</h1>
+<div id="piano"></div>
+<div id="info">
+  <div>音符: <span class="val" id="noteCount">0</span></div>
+  <div>当前: <span class="val" id="currentNote">-</span></div>
+</div>
+<div id="controls">
+  <button onclick="toggleRecord()">⏺ 录制</button>
+  <button onclick="playRecording()">▶ 播放</button>
+  <button onclick="clearRecording()">🗑️ 清空</button>
+  <button onclick="playDemo()">🎵 演示</button>
+</div>
+<div id="msg">键盘: A S D F G H J K L ; (白键) W E T Y U O P (黑键)</div>
+<div id="recording"></div>
+<script>
+const AudioCtx=window.AudioContext||window.webkitAudioContext;
+let audioCtx;
+function initAudio(){if(!audioCtx)audioCtx=new AudioCtx()}
+
+const NOTES=[
+  {note:'C4',freq:261.63,key:'a',type:'white'},
+  {note:'C#4',freq:277.18,key:'w',type:'black'},
+  {note:'D4',freq:293.66,key:'s',type:'white'},
+  {note:'D#4',freq:311.13,key:'e',type:'black'},
+  {note:'E4',freq:329.63,key:'d',type:'white'},
+  {note:'F4',freq:349.23,key:'f',type:'white'},
+  {note:'F#4',freq:369.99,key:'t',type:'black'},
+  {note:'G4',freq:392.00,key:'g',type:'white'},
+  {note:'G#4',freq:415.30,key:'y',type:'black'},
+  {note:'A4',freq:440.00,key:'h',type:'white'},
+  {note:'A#4',freq:466.16,key:'u',type:'black'},
+  {note:'B4',freq:493.88,key:'j',type:'white'},
+  {note:'C5',freq:523.25,key:'k',type:'white'},
+  {note:'C#5',freq:554.37,key:'o',type:'black'},
+  {note:'D5',freq:587.33,key:'l',type:'white'},
+  {note:'D#5',freq:622.25,key:'p',type:'black'},
+  {note:'E5',freq:659.25,key:';',type:'white'},
+];
+
+let recording=[],isRecording=false,recordStartTime,noteCount=0;
+
+function buildPiano(){
+  const piano=document.getElementById('piano');
+  piano.innerHTML='';
+  let whiteIdx=0;
+  for(const n of NOTES){
+    if(n.type==='white'){
+      const key=document.createElement('div');
+      key.className='white-key';key.dataset.note=n.note;
+      key.innerHTML=`<span>${n.key.toUpperCase()}</span>`;
+      key.addEventListener('mousedown',()=>playNote(n));
+      key.addEventListener('mouseup',()=>stopNote(n));
+      key.addEventListener('mouseleave',()=>stopNote(n));
+      piano.appendChild(key);
+      whiteIdx++;
+    }
+  }
+  // position black keys
+  whiteIdx=0;
+  const blackPositions={1:0,3:1,6:3,8:4,10:5,13:7,15:8};
+  for(let i=0;i<NOTES.length;i++){
+    const n=NOTES[i];
+    if(n.type==='black'){
+      const key=document.createElement('div');
+      key.className='black-key';key.dataset.note=n.note;
+      key.style.left=(blackPositions[i]*50+35)+'px';
+      key.addEventListener('mousedown',()=>playNote(n));
+      key.addEventListener('mouseup',()=>stopNote(n));
+      key.addEventListener('mouseleave',()=>stopNote(n));
+      piano.appendChild(key);
+    }else{whiteIdx++}
+  }
+}
+
+function playNote(n){
+  initAudio();
+  const o=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  o.connect(g);g.connect(audioCtx.destination);
+  o.type='triangle';o.frequency.setValueAtTime(n.freq,audioCtx.currentTime);
+  g.gain.setValueAtTime(0.2,audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+2);
+  o.start();o.stop(audioCtx.currentTime+2);
+  n._osc=o;n._gain=g;
+  // visual
+  const key=document.querySelector(`[data-note="${n.note}"]`);
+  if(key)key.classList.add('active');
+  document.getElementById('currentNote').textContent=n.note;
+  noteCount++;document.getElementById('noteCount').textContent=noteCount;
+  // recording
+  if(isRecording){
+    recording.push({note:n.note,time:Date.now()-recordStartTime,duration:300});
+  }
+}
+
+function stopNote(n){
+  if(n._gain){n._gain.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.3)}
+  const key=document.querySelector(`[data-note="${n.note}"]`);
+  if(key)key.classList.remove('active');
+}
+
+function toggleRecord(){
+  isRecording=!isRecording;
+  if(isRecording){recording=[];recordStartTime=Date.now()}
+  document.querySelector('#controls button').textContent=isRecording?'⏹ 停止':'⏺ 录制';
+}
+
+async function playRecording(){
+  if(!recording.length)return;
+  for(const n of recording){
+    const note=NOTES.find(nn=>nn.note===n.note);
+    if(note){
+      await new Promise(r=>setTimeout(r,n.time-(recording.indexOf(n)>0?recording[recording.indexOf(n)-1].time:0)));
+      playNote(note);
+      setTimeout(()=>stopNote(note),n.duration);
+    }
+  }
+}
+
+function clearRecording(){recording=[];document.getElementById('recording').innerHTML=''}
+
+async function playDemo(){
+  const melody=[
+    {note:'C4',delay:0},{note:'E4',delay:200},{note:'G4',delay:400},{note:'C5',delay:600},
+    {note:'G4',delay:900},{note:'E4',delay:1100},{note:'C4',delay:1300},
+    {note:'F4',delay:1600},{note:'A4',delay:1800},{note:'C5',delay:2000},
+    {note:'A4',delay:2300},{note:'F4',delay:2500},{note:'D4',delay:2700},
+  ];
+  for(const m of melody){
+    const note=NOTES.find(n=>n.note===m.note);
+    if(note){
+      await new Promise(r=>setTimeout(r,m.delay-(melody.indexOf(m)>0?melody[melody.indexOf(m)-1].delay:0)));
+      playNote(note);
+      setTimeout(()=>stopNote(note),400);
+    }
+  }
+}
+
+// keyboard
+const keyMap={};
+for(const n of NOTES)keyMap[n.key]=n;
+
+document.addEventListener('keydown',e=>{
+  if(e.repeat)return;
+  const n=keyMap[e.key.toLowerCase()];
+  if(n){e.preventDefault();playNote(n)}
+});
+document.addEventListener('keyup',e=>{
+  const n=keyMap[e.key.toLowerCase()];
+  if(n)stopNote(n);
+});
+
+buildPiano();
+</script>
+</body>
+</html>

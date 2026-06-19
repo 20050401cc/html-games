@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⌨️ 打字风暴</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Courier New',monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#c8d0e0}
+h1{font-size:28px;color:#0f0;margin-bottom:6px;font-family:'Segoe UI',sans-serif}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px;font-family:'Segoe UI',sans-serif}
+#info .val{color:#ffd700;font-weight:bold}
+#gameArea{width:600px;position:relative}
+#wordArea{height:200px;position:relative;overflow:hidden;background:#12121e;border:1px solid #2a2a3e;border-radius:8px;margin-bottom:12px}
+.word{position:absolute;font-size:18px;font-weight:bold;padding:2px 8px;border-radius:4px;white-space:nowrap;transition:color 0.1s}
+.word.active{color:#ffd700;text-shadow:0 0 10px rgba(255,215,0,0.5)}
+.word.normal{color:#888}
+.word.danger{color:#f44}
+#inputArea{text-align:center;margin-bottom:12px}
+#typeInput{width:300px;padding:10px;font-size:18px;background:#1a1a2e;color:#0f0;border:2px solid #2a3a2a;border-radius:8px;font-family:'Courier New',monospace;text-align:center;outline:none}
+#typeInput:focus{border-color:#0f0}
+#stats{display:flex;gap:24px;justify-content:center;font-size:14px;font-family:'Segoe UI',sans-serif}
+#stats .box{text-align:center;padding:8px 16px;background:#12121e;border-radius:8px}
+#stats .box .label{font-size:10px;color:#888;text-transform:uppercase}
+#stats .box .val{font-size:24px;color:#0f0;font-weight:bold}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column;font-family:'Segoe UI',sans-serif}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#0f0;color:#111;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+#progress{width:100%;height:4px;background:#1a1a2e;border-radius:2px;margin-bottom:8px;overflow:hidden}
+#progress .fill{height:100%;background:#0f0;transition:width 0.3s;border-radius:2px}
+</style>
+</head>
+<body>
+<h1>⌨️ 打字风暴</h1>
+<div id="info">
+  <div>分数: <span class="val" id="score">0</span></div>
+  <div>combo: <span class="val" id="combo">0</span></div>
+  <div>最高: <span class="val" id="best">0</span></div>
+</div>
+<div id="progress"><div class="fill" id="progressFill" style="width:0%"></div></div>
+<div id="gameArea">
+  <div id="wordArea"></div>
+  <div id="inputArea"><input id="typeInput" placeholder="输入单词..." autocomplete="off" autofocus></div>
+</div>
+<div id="stats">
+  <div class="box"><div class="label">WPM</div><div class="val" id="wpm">0</div></div>
+  <div class="box"><div class="label">准确率</div><div class="val" id="accuracy">100%</div></div>
+  <div class="box"><div class="label">已消灭</div><div class="val" id="killed">0</div></div>
+  <div class="box"><div class="label">漏掉</div><div class="val" id="missed">0</div></div>
+</div>
+<div id="overlay">
+  <h2 id="olTitle" style="color:#f44">💀 游戏结束</h2>
+  <p id="olMsg"></p>
+  <button onclick="init()">再来一次</button>
+</div>
+<script>
+const WORDS=[
+  'the','be','to','of','and','a','in','that','have','i','it','for','not','on','with','he','as','you','do','at',
+  'this','but','his','by','from','they','we','her','she','or','an','will','my','one','all','would','there','their',
+  'what','so','up','out','if','about','who','get','which','go','me','when','make','can','like','time','no','just',
+  'him','know','take','people','into','year','your','good','some','could','them','see','other','than','then','now',
+  'look','only','come','its','over','think','also','back','after','use','two','how','our','work','first','well',
+  'way','even','new','want','because','any','these','give','day','most','us','great','code','type','fast','game',
+  'play','run','jump','fire','dark','light','sword','magic','power','speed','quick','brown','fox','lazy','dog',
+  'function','return','const','let','var','class','import','export','async','await','promise','array','object',
+  'string','number','boolean','null','undefined','true','false','while','for','if','else','switch','case','break',
+  'computer','keyboard','mouse','screen','monitor','program','software','hardware','network','internet','website',
+  'algorithm','database','server','client','request','response','header','cookie','session','token','password',
+  'dragon','wizard','knight','castle','forest','mountain','river','ocean','storm','thunder','lightning','shadow',
+  'crystal','phoenix','demon','angel','spirit','ghost','zombie','vampire','werewolf','fairy','elf','dwarf','orc',
+];
+
+let words,score,combo,maxCombo,killed,missed,totalTyped,correctTyped,startTime,alive,speed,spawnTimer;
+
+const best=parseInt(localStorage.getItem('typing_best')||'0');
+document.getElementById('best').textContent=best;
+
+function init(){
+  words=[];score=0;combo=0;maxCombo=0;killed=0;missed=0;totalTyped=0;correctTyped=0;
+  alive=true;speed=1;spawnTimer=0;
+  startTime=Date.now();
+  document.getElementById('overlay').classList.remove('show');
+  document.getElementById('typeInput').value='';
+  document.getElementById('typeInput').focus();
+  spawnWord();spawnWord();
+  render();
+}
+
+function spawnWord(){
+  const text=WORDS[Math.floor(Math.random()*WORDS.length)];
+  const x=Math.random()*500;
+  const speedMult=0.3+speed*0.1+Math.random()*0.3;
+  words.push({text,x,y:0,speed:speedMult,typed:''});
+}
+
+function render(){
+  const area=document.getElementById('wordArea');
+  area.innerHTML='';
+  const input=document.getElementById('typeInput').value.toLowerCase();
+  for(const w of words){
+    const el=document.createElement('div');
+    el.className='word';
+    if(input&&w.text.startsWith(input)&&!w.typed){el.classList.add('active')}
+    else if(w.y>160){el.classList.add('danger')}
+    else{el.classList.add('normal')}
+    el.style.left=w.x+'px';el.style.top=w.y+'px';
+    // highlight typed portion
+    if(w.typed){
+      el.innerHTML=`<span style="color:#0f0">${w.text.slice(0,w.typed.length)}</span>${w.text.slice(w.typed.length)}`;
+    }else{
+      el.textContent=w.text;
+    }
+    area.appendChild(el);
+  }
+  updateStats();
+}
+
+function update(){
+  if(!alive)return;
+  // move words down
+  for(let i=words.length-1;i>=0;i--){
+    words[i].y+=words[i].speed;
+    if(words[i].y>190){
+      words.splice(i,1);missed++;combo=0;
+      if(missed>=10){alive=false;gameOver();return}
+    }
+  }
+  // spawn new words
+  spawnTimer++;
+  if(spawnTimer>Math.max(30,80-speed*5)){
+    spawnWord();spawnTimer=0;
+    if(killed+missed>0&&(killed+missed)%10===0)speed++;
+  }
+  render();
+  document.getElementById('progressFill').style.width=`${(missed/10)*100}%`;
+}
+
+function checkInput(){
+  const input=document.getElementById('typeInput').value.toLowerCase();
+  if(!input)return;
+  // find matching word
+  for(let i=0;i<words.length;i++){
+    if(words[i].text===input){
+      // word completed
+      score+=words[i].text.length*10+combo*5;
+      combo++;maxCombo=Math.max(maxCombo,combo);
+      killed++;
+      totalTyped+=input.length;correctTyped+=input.length;
+      words.splice(i,1);
+      document.getElementById('typeInput').value='';
+      return;
+    }
+  }
+  // partial match tracking
+  for(const w of words){
+    if(w.text.startsWith(input)){w.typed=input;return}
+  }
+}
+
+document.getElementById('typeInput').addEventListener('input',()=>{
+  checkInput();
+  totalTyped++;
+  const input=document.getElementById('typeInput').value.toLowerCase();
+  if(words.some(w=>w.text.startsWith(input)))correctTyped++;
+});
+
+document.getElementById('typeInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){
+    const input=document.getElementById('typeInput').value.toLowerCase();
+    if(input)totalTyped--;
+    document.getElementById('typeInput').value='';
+  }
+});
+
+function updateStats(){
+  const elapsed=(Date.now()-startTime)/1000/60;
+  const wpm=elapsed>0?Math.round(killed/elapsed):0;
+  const acc=totalTyped>0?Math.round(correctTyped/totalTyped*100):100;
+  document.getElementById('score').textContent=score;
+  document.getElementById('combo').textContent=combo;
+  document.getElementById('wpm').textContent=wpm;
+  document.getElementById('accuracy').textContent=acc+'%';
+  document.getElementById('killed').textContent=killed;
+  document.getElementById('missed').textContent=missed;
+}
+
+function gameOver(){
+  if(score>best){best=score;localStorage.setItem('typing_best',score);document.getElementById('best').textContent=score}
+  const elapsed=Math.floor((Date.now()-startTime)/1000);
+  document.getElementById('olMsg').textContent=`分数: ${score} | 消灭: ${killed} | WPM: ${Math.round(killed/(elapsed/60))} | 时间: ${elapsed}秒`;
+  document.getElementById('overlay').classList.add('show');
+}
+
+setInterval(update,50);
+init();
+</script>
+</body>
+</html>

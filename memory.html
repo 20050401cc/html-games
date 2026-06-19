@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🃏 记忆翻牌</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0e0e18;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#5bf;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+#board{display:grid;gap:8px;padding:12px;background:#12121e;border-radius:12px;border:1px solid #2a2a3e;box-shadow:0 0 30px rgba(90,130,255,0.1)}
+.card{width:70px;height:80px;background:#2a2a4a;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:28px;transition:all .3s;position:relative;perspective:300px}
+.card.flipped{background:#1a1a3a;border-color:#5bf;transform:rotateY(180deg)}
+.card.matched{background:#1a2a1a;border-color:#4a4;opacity:0.7;transform:rotateY(180deg)}
+.card .front,.card .back{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;backface-visibility:hidden;border-radius:8px;border:2px solid #2a2a4a}
+.card .front{background:#2a2a4a}
+.card .back{background:#1a1a3a;transform:rotateY(180deg);border-color:#5bf}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#5bf;border:1px solid #2a2a3a;border-radius:6px;cursor:pointer;font-size:12px}
+#controls select{padding:4px 8px;background:#1a1a2e;color:#5bf;border:1px solid #2a2a3a;border-radius:4px;font-size:12px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;color:#ffd700;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#5bf;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🃏 记忆翻牌</h1>
+<div id="info">
+  <div>翻牌: <span class="val" id="moves">0</span></div>
+  <div>配对: <span class="val" id="pairs">0</span></div>
+  <div>时间: <span class="val" id="timer">0</span>s</div>
+  <div>最高: <span class="val" id="best">-</span></div>
+</div>
+<div id="board"></div>
+<div id="controls">
+  <select id="size" onchange="newGame()">
+    <option value="4">4×3 (6对)</option>
+    <option value="6" selected>4×4 (8对)</option>
+    <option value="8">4×5 (10对)</option>
+    <option value="10">5×6 (15对)</option>
+  </select>
+  <button onclick="newGame()">新游戏</button>
+</div>
+<div id="overlay">
+  <h2>🎉 全部配对完成！</h2>
+  <p id="olMsg"></p>
+  <button onclick="newGame()">再来一局</button>
+</div>
+<script>
+const ICONS=['🍎','🍊','🍋','🍇','🍓','🍒','🍑','🥝','🍌','🍉','🫐','🥭','🍍','🥥','🍈','🥑','🌽','🥕','🍆','🥦'];
+let cards,flipped,matched,moves,pairs,cols,rows,totalPairs,startTime,timerInterval,canFlip;
+
+function newGame(){
+  const pairs=parseInt(document.getElementById('size').value);
+  totalPairs=pairs;
+  cols=pairs<=6?4:pairs<=10?4:5;
+  rows=Math.ceil(pairs*2/cols);
+  const icons=ICONS.slice(0,pairs);
+  const deck=[...icons,...icons].sort(()=>Math.random()-0.5);
+  cards=deck.map((icon,i)=>({icon,id:i,flipped:false,matched:false}));
+  flipped=[];matched=0;moves=0;canFlip=true;
+  clearInterval(timerInterval);startTime=Date.now();
+  timerInterval=setInterval(()=>{
+    document.getElementById('timer').textContent=Math.floor((Date.now()-startTime)/1000);
+  },1000);
+  document.getElementById('overlay').classList.remove('show');
+  renderBoard();
+  updateInfo();
+}
+
+function renderBoard(){
+  const board=document.getElementById('board');
+  board.style.gridTemplateColumns=`repeat(${cols},70px)`;
+  board.innerHTML='';
+  cards.forEach((card,i)=>{
+    const el=document.createElement('div');
+    el.className='card'+(card.flipped?' flipped':'')+(card.matched?' matched':'');
+    el.innerHTML=`<div class="front">?</div><div class="back">${card.icon}</div>`;
+    el.addEventListener('click',()=>flipCard(i));
+    board.appendChild(el);
+  });
+}
+
+function flipCard(idx){
+  if(!canFlip)return;
+  const card=cards[idx];
+  if(card.flipped||card.matched)return;
+  if(flipped.length>=2)return;
+  card.flipped=true;
+  flipped.push(idx);
+  renderBoard();
+  if(flipped.length===2){
+    moves++;
+    canFlip=false;
+    const[c1,c2]=flipped;
+    if(cards[c1].icon===cards[c2].icon){
+      cards[c1].matched=cards[c2].matched=true;
+      matched++;
+      flipped=[];canFlip=true;
+      renderBoard();
+      if(matched===totalPairs)win();
+    }else{
+      setTimeout(()=>{
+        cards[c1].flipped=cards[c2].flipped=false;
+        flipped=[];canFlip=true;
+        renderBoard();
+      },800);
+    }
+    updateInfo();
+  }
+}
+
+function win(){
+  clearInterval(timerInterval);
+  const time=Math.floor((Date.now()-startTime)/1000);
+  const bestKey=`memory_${totalPairs}`;
+  const prev=localStorage.getItem(bestKey);
+  if(!prev||moves<parseInt(prev)){
+    localStorage.setItem(bestKey,moves);
+  }
+  document.getElementById('olMsg').textContent=`翻牌: ${moves}次 | 时间: ${time}秒`;
+  document.getElementById('overlay').classList.add('show');
+}
+
+function updateInfo(){
+  document.getElementById('moves').textContent=moves;
+  document.getElementById('pairs').textContent=`${matched}/${totalPairs}`;
+  const bestKey=`memory_${totalPairs}`;
+  const best=localStorage.getItem(bestKey);
+  document.getElementById('best').textContent=best?best+'次':'-';
+}
+
+newGame();
+</script>
+</body>
+</html>

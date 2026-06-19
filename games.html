@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎮 超级游戏合集 - 75款精选</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;color:#d0d0e0;min-height:100vh}
+.hero{text-align:center;padding:40px 20px 20px;background:linear-gradient(180deg,#1a1a3a,#0a0a14)}
+.hero h1{font-size:36px;color:#ffd700;margin-bottom:4px;text-shadow:0 0 20px rgba(255,215,0,0.3)}
+.hero p{color:#888;font-size:13px}
+#search{display:flex;justify-content:center;padding:12px 20px;gap:8px;flex-wrap:wrap}
+#search input{padding:8px 16px;background:#1a1a2e;color:#ffd700;border:1px solid #2a2a3e;border-radius:20px;font-size:13px;width:240px;outline:none}
+#search input:focus{border-color:#ffd700}
+.tags{display:flex;gap:4px;justify-content:center;padding:0 20px 16px;flex-wrap:wrap}
+.tag{padding:3px 10px;background:#1a1a2e;border:1px solid #2a2a3e;border-radius:12px;font-size:11px;color:#888;cursor:pointer;transition:all .15s}
+.tag:hover,.tag.active{border-color:#ffd700;color:#ffd700;background:#1e1e32}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;max-width:1400px;margin:0 auto;padding:0 20px 40px}
+.card{background:#12121e;border:1px solid #2a2a3e;border-radius:10px;overflow:hidden;cursor:pointer;transition:all .25s;text-decoration:none;color:inherit;display:block}
+.card:hover{transform:translateY(-3px);border-color:#ffd700;box-shadow:0 6px 20px rgba(255,215,0,0.1)}
+.card .icon{height:80px;display:flex;align-items:center;justify-content:center;font-size:36px;position:relative}
+.card .icon::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 60%,rgba(0,0,0,0.4))}
+.card .meta{padding:8px 10px}
+.card .meta h3{font-size:13px;color:#e0e0e0;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .meta p{font-size:10px;color:#888;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .tags{display:flex;gap:3px;margin-top:4px;flex-wrap:wrap}
+.card .tags span{padding:1px 5px;background:#1a1a2e;border-radius:6px;font-size:8px;color:#666}
+footer{text-align:center;padding:20px;color:#444;font-size:11px;border-top:1px solid #1a1a2e}
+.stats{display:flex;gap:20px;justify-content:center;padding:8px 20px;font-size:12px;color:#666}
+.stats span{color:#ffd700}
+</style>
+</head>
+<body>
+<div class="hero">
+  <h1>🎮 超级游戏合集</h1>
+  <p>75款精选游戏 · 全部免费 · 纯浏览器运行 · 无需下载</p>
+</div>
+<div class="stats">
+  <div>总游戏: <span>75</span></div>
+  <div>总代码: <span>15000+</span>行</div>
+  <div>技术: <span>纯HTML/CSS/JS</span></div>
+</div>
+<div id="search">
+  <input type="text" id="searchInput" placeholder="🔍 搜索游戏..." oninput="filterGames()">
+</div>
+<div class="tags" id="tags"></div>
+<div id="grid"></div>
+<footer>用 ❤️ 和 Claude Code 制作 · 75款游戏 · 纯浏览器运行</footer>
+<script>
+const GAMES=[
+  {f:'roguelike.html',n:'⚔️ 暗影地牢',d:'Roguelike地牢RPG，8层地牢，8技能，装备系统',t:['RPG','Roguelike','策略']},
+  {f:'card-rpg.html',n:'🃏 暗影卡牌',d:'卡牌构建RPG，20张卡，Boss战',t:['卡牌','RPG','策略']},
+  {f:'tower-defense.html',n:'🏰 塔防战争',d:'6种防御塔，7种敌人，无尽波次',t:['塔防','策略']},
+  {f:'platformer.html',n:'🏃 像素跳跃',d:'横版平台跳跃，多关卡，敌人AI',t:['平台','动作']},
+  {f:'invaders.html',n:'👾 太空侵略者',d:'经典太空射击，波次递增',t:['射击','经典']},
+  {f:'breakout.html',n:'🔨 打砖块',d:'6种道具，多关卡难度递增',t:['经典','街机']},
+  {f:'2048.html',n:'🧮 2048',d:'数字合并益智，撤销功能',t:['益智','休闲']},
+  {f:'tetris.html',n:'🧱 俄罗斯方块',d:'经典方块消除，幽灵预览',t:['经典','消除']},
+  {f:'snake.html',n:'🐍 贪吃蛇',d:'特殊食物，穿墙模式',t:['经典','街机']},
+  {f:'flappy.html',n:'🐦 Flappy Bird',d:'昼夜交替，物理引擎',t:['休闲','街机']},
+  {f:'pong.html',n:'🏓 乒乓球',d:'3级AI难度，触控支持',t:['经典','对战']},
+  {f:'racing.html',n:'🏎️ 极速赛车',d:'无尽赛车，金币收集',t:['赛车','竞速']},
+  {f:'whack.html',n:'🔨 打地鼠',d:'30秒限时，连击系统',t:['休闲','反应']},
+  {f:'aim.html',n:'🎯 瞄准训练',d:'4种模式，反应测试',t:['训练','反应']},
+  {f:'reaction.html',n:'⚡ 反应测试',d:'测量反应速度ms',t:['训练','反应']},
+  {f:'typing.html',n:'⌨️ 打字风暴',d:'单词下落打字，combo系统',t:['打字','训练']},
+  {f:'simon.html',n:'🎵 Simon记忆',d:'经典记忆序列游戏',t:['记忆','训练']},
+  {f:'memory.html',n:'🃏 记忆翻牌',d:'多尺寸配对，计步计时',t:['记忆','益智']},
+  {f:'minesweeper.html',n:'💣 扫雷',d:'三种难度，计时挑战',t:['经典','益智']},
+  {f:'sokoban.html',n:'📦 推箱子',d:'20手关+程序化生成',t:['经典','益智']},
+  {f:'wordle.html',n:'📝 Wordle猜词',d:'6次猜5字母词，颜色提示',t:['文字','益智']},
+  {f:'sudoku.html',n:'🔢 数独',d:'4难度，笔记系统，提示',t:['经典','益智']},
+  {f:'connect4.html',n:'🔴🟡 四子棋',d:'双人/简单AI/困难AI',t:['棋类','AI']},
+  {f:'gomoku.html',n:'⚫ 五子棋',d:'双人/简单AI/困难AI',t:['棋类','AI']},
+  {f:'othello.html',n:'⚫⚪ 黑白棋',d:'双人/AI对战',t:['棋类','AI']},
+  {f:'maze.html',n:'🌀 迷宫逃脱',d:'4种尺寸，钥匙收集，寻路提示',t:['迷宫','益智']},
+  {f:'idle.html',n:'🏭 放置工厂',d:'10种建筑，转生系统，成就',t:['放置','Idle']},
+  {f:'bomberman.html',n:'💣 炸弹人',d:'经典炸弹人对战',t:['经典','动作']},
+  {f:'space.html',n:'🌌 星际迷航',d:'无尽太空飞行，障碍躲避',t:['太空','飞行']},
+  {f:'space2.html',n:'🌌 星际虫洞',d:'太空射击，波次敌人，拾取系统',t:['太空','射击']},
+  {f:'dodge.html',n:'💣 弹幕躲避',d:'鼠标躲避弹幕，4种弹幕模式',t:['反应','躲避']},
+  {f:'knife.html',n:'🎯 飞刀挑战',d:'旋转靶子投飞刀，避免碰撞',t:['反应','精准']},
+  {f:'archery.html',n:'🏹 弓箭手',d:'风力影响，10箭计分',t:['射击','精准']},
+  {f:'archery2.html',n:'🏹 射箭比赛',d:'风力+力量控制，精准射击',t:['射击','精准']},
+  {f:'darts.html',n:'🎯 飞镖',d:'10支飞镖，环数计分',t:['射击','精准']},
+  {f:'curling.html',n:'🧊 冰壶',d:'力量瞄准，碰撞物理',t:['体育','策略']},
+  {f:'fruitninja.html',n:'🎪 水果忍者',d:'鼠标切水果，炸弹躲避',t:['反应','休闲']},
+  {f:'balloon.html',n:'🎯 打气球',d:'30秒限时，连击系统',t:['反应','休闲']},
+  {f:'balloon2.html',n:'🎪 打气球2',d:'特殊气球，连击倍分',t:['反应','休闲']},
+  {f:'juggle.html',n:'🎪 杂技球',d:'自动球+手动球，平衡抛接',t:['休闲','平衡']},
+  {f:'juggle2.html',n:'🎪 杂技球2',d:'多球平衡，AI球协助',t:['休闲','平衡']},
+  {f:'balance.html',n:'🎪 平衡大师',d:'鼠标控制平台平衡方块',t:['平衡','物理']},
+  {f:'balanceball.html',n:'🎪 平衡球',d:'点击施力让球到达目标',t:['平衡','物理']},
+  {f:'stack.html',n:'🏗️ 堆叠高塔',d:'精确对齐堆叠方块',t:['精准','休闲']},
+  {f:'pinball.html',n:'🎰 弹珠台',d:'经典弹珠台，得分系统',t:['经典','街机']},
+  {f:'pinball2.html',n:'🎯 弹珠台2',d:'双挡板弹珠，目标系统',t:['经典','街机']},
+  {f:'slots.html',n:'🎰 老虎机',d:'经典老虎机，赔率系统',t:['运气','休闲']},
+  {f:'dice.html',n:'🎲 骰子大战',d:'双人/AI骰子对战，策略保留',t:['骰子','策略']},
+  {f:'yahtzee.html',n:'🎲 骰子Yahtzee',d:'经典Yahtzee骰子游戏',t:['骰子','策略']},
+  {f:'dicemaze.html',n:'🎲 骰子迷宫',d:'掷骰子走迷宫，收集钥匙',t:['骰子','迷宫']},
+  {f:'match3.html',n:'🎨 消消乐',d:'三消玩法，连击系统',t:['消除','休闲']},
+  {f:'nummerge.html',n:'🔢 数字消除',d:'2048变体，滑动合并',t:['数字','益智']},
+  {f:'sliding.html',n:'🔢 数字华容道',d:'3/4/5阶滑块拼图',t:['经典','益智']},
+  {f:'colorgrid.html',n:'🎪 魔术方块',d:'交换颜色匹配目标排列',t:['颜色','益智']},
+  {f:'pipeconnect.html',n:'🧩 管道连接',d:'旋转管道连接两端',t:['管道','益智']},
+  {f:'bubbleshooter.html',n:'🎪 弹球消除',d:'射击同色球消除',t:['射击','消除']},
+  {f:'blockclear.html',n:'🎪 块消除',d:'俄罗斯方块变体',t:['消除','经典']},
+  {f:'typing2.html',n:'🎪 打字练习2',d:'60秒打字计时，准确率统计',t:['打字','训练']},
+  {f:'rhythm.html',n:'🎸 节奏大师',d:'4轨道节奏，DFJK控制',t:['节奏','音乐']},
+  {f:'rhythm2.html',n:'🎸 音乐节拍',d:'节拍下落，Perfect评分',t:['节奏','音乐']},
+  {f:'piano.html',n:'🎹 钢琴',d:'17键钢琴，键盘演奏',t:['音乐','创意']},
+  {f:'snake-ai.html',n:'🌀 贪吃蛇AI',d:'BFS寻路AI自动吃食物',t:['AI','经典']},
+  {f:'snake2.html',n:'🎪 贪吃蛇2',d:'穿墙模式，特殊食物，速度模式',t:['经典','街机']},
+  {f:'jumper.html',n:'🎪 跳跃忍者',d:'无尽向上跳跃，收集金币',t:['跳跃','平台']},
+  {f:'physics.html',n:'🧲 弹球物理',d:'拖拽投射，重力弹跳',t:['物理','沙盒']},
+  {f:'magnet.html',n:'🧲 磁力球',d:'正负极碰撞，磁力场可视化',t:['物理','沙盒']},
+  {f:'ripple.html',n:'🌊 水波纹',d:'点击产生波纹，雨滴模式',t:['视觉','创意']},
+  {f:'fireworks.html',n:'🎆 烟花',d:'点击放烟花，自动模式',t:['视觉','创意']},
+  {f:'life.html',n:'🌀 生命游戏',d:'Conway生命游戏，预设图案',t:['模拟','创意']},
+  {f:'turtle.html',n:'🐢 海龟绘图',d:'Logo语言，代码绘图',t:['编程','创意']},
+  {f:'pixelpaint.html',n:'🎨 像素画板',d:'6种工具，多颜色，导出PNG',t:['绘画','创意']},
+  {f:'pixelanim.html',n:'🎨 像素动画',d:'多帧动画，洋葱皮，导出',t:['动画','创意']},
+  {f:'cube3d.html',n:'🧊 3D旋转方块',d:'3D立方体颜色匹配',t:['3D','益智']},
+  {f:'marblemaze.html',n:'🎪 弹珠迷宫',d:'倾斜迷宫收集宝石',t:['迷宫','物理']},
+];
+let activeTag='全部';
+function init(){
+  const tags=['全部',...new Set(GAMES.flatMap(g=>g.t))].sort();
+  document.getElementById('tags').innerHTML=tags.map(t=>`<span class="tag${t===activeTag?' active':''}" onclick="setTag('${t}')">${t}</span>`).join('');
+  renderGrid();
+}
+function setTag(t){activeTag=t;document.querySelectorAll('.tag').forEach(el=>el.classList.toggle('active',el.textContent===t));filterGames()}
+function filterGames(){
+  const q=document.getElementById('searchInput').value.toLowerCase();
+  renderGrid(q);
+}
+function renderGrid(q=''){
+  const filtered=GAMES.filter(g=>{
+    const matchTag=activeTag==='全部'||g.t.includes(activeTag);
+    const matchSearch=!q||g.n.toLowerCase().includes(q)||g.d.toLowerCase().includes(q)||g.t.some(t=>t.toLowerCase().includes(q));
+    return matchTag&&matchSearch;
+  });
+  const bgColors=['#1a1a3a','#1a2a1a','#2a1a1a','#1a1a2a','#2a2a1a','#1a2a2a','#2a1a2a','#2a2a2a'];
+  document.getElementById('grid').innerHTML=filtered.map((g,i)=>{
+    const bg=bgColors[i%bgColors.length];
+    return`<a class="card" href="${g.f}">
+      <div class="icon" style="background:linear-gradient(135deg,${bg},#12121e)">${g.n.split(' ')[0]}</div>
+      <div class="meta">
+        <h3>${g.n}</h3>
+        <p>${g.d}</p>
+        <div class="tags">${g.t.map(t=>`<span>${t}</span>`).join('')}</div>
+      </div>
+    </a>`;
+  }).join('');
+}
+init();
+</script>
+</body>
+</html>

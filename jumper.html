@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎪 跳跃忍者</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#ffd700;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #2a2a3e;border-radius:8px;box-shadow:0 0 30px rgba(255,215,0,0.1);cursor:pointer}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a1a2e;color:#ffd700;border:1px solid #2a2a3e;border-radius:6px;cursor:pointer;font-size:12px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#ffd700;color:#111;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🎪 跳跃忍者</h1>
+<div id="info">
+  <div>分数: <span class="val" id="score">0</span></div>
+  <div>高度: <span class="val" id="height">0</span></div>
+  <div>最高: <span class="val" id="best">0</span></div>
+</div>
+<canvas id="game"></canvas>
+<div id="controls">
+  <button onclick="newGame()">新游戏</button>
+</div>
+<div id="overlay">
+  <h2 id="olTitle">💀 掉落！</h2>
+  <p id="olMsg"></p>
+  <button onclick="newGame()">再来一次</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=360,H=600;
+canvas.width=W;canvas.height=H;
+
+let player,platforms,coins,particles,score,maxHeight,alive,camY,boostTimer;
+let best=parseInt(localStorage.getItem('jumper_best')||'0');
+document.getElementById('best').textContent=best;
+
+function newGame(){
+  player={x:W/2,y:H-80,w:24,h:24,vy:0,vx:0};
+  platforms=[];coins=[];particles=[];
+  score=0;maxHeight=0;alive=true;camY=0;boostTimer=0;
+  // generate initial platforms
+  generatePlatforms(0,20);
+  document.getElementById('overlay').classList.remove('show');
+  updateInfo();
+  if(window._loop)cancelAnimationFrame(window._loop);
+  function loop(){update();render();window._loop=requestAnimationFrame(loop)}
+  loop();
+}
+
+function generatePlatforms(startY,count){
+  for(let i=0;i<count;i++){
+    const y=startY-i*(40+Math.random()*30);
+    const x=Math.random()*(W-60);
+    const w=50+Math.random()*40;
+    const moving=Math.random()<0.2;
+    const breaking=Math.random()<0.1;
+    platforms.push({
+      x,y,w,h:8,
+      type:breaking?'break':moving?'move':'normal',
+      dx:moving?(Math.random()-0.5)*2:0,
+      origX:x,
+      broken:false,
+    });
+    // coin above some platforms
+    if(Math.random()<0.3){
+      coins.push({x:x+w/2,y:y-20,collected:false});
+    }
+  }
+}
+
+function update(){
+  if(!alive)return;
+  // gravity
+  player.vy+=0.4;
+  player.x+=player.vx;
+  player.y+=player.vy;
+  player.vx*=0.9;
+  // wall wrap
+  if(player.x<-player.w)player.x=W;
+  if(player.x>W)player.x=-player.w;
+  // platform collision (only when falling)
+  if(player.vy>0){
+    for(const p of platforms){
+      if(p.broken)continue;
+      if(player.x+player.w>p.x&&player.x<p.x+p.w&&player.y+player.h>=p.y&&player.y+player.h<=p.y+p.h+8){
+        player.y=p.y-player.h;
+        player.vy=-12-boostTimer*2;
+        boostTimer=0;
+        if(p.type==='break'){
+          p.broken=true;
+          spawnParticles(p.x+p.w/2,p.y,'#8b4513',8);
+        }
+      }
+    }
+  }
+  // move platforms
+  for(const p of platforms){
+    if(p.type==='move'){
+      p.x+=p.dx;
+      if(p.x<0||p.x+p.w>W)p.dx*=-1;
+    }
+  }
+  // coin collection
+  for(const c of coins){
+    if(c.collected)continue;
+    if(Math.abs(player.x+player.w/2-c.x)<15&&Math.abs(player.y+player.h/2-c.y)<15){
+      c.collected=true;score+=50;
+      spawnParticles(c.x,c.y,'#ffd700',8);
+    }
+  }
+  // camera
+  const targetCamY=player.y-H*0.4;
+  if(targetCamY<camY)camY+=(targetCamY-camY)*0.1;
+  // track height
+  const currentHeight=Math.floor((H-player.y)/10);
+  if(currentHeight>maxHeight){
+    maxHeight=currentHeight;
+    score=Math.max(score,maxHeight);
+  }
+  // generate more platforms as we go up
+  const highestPlatform=Math.min(...platforms.map(p=>p.y));
+  if(highestPlatform>camY-200){
+    generatePlatforms(highestPlatform,10);
+  }
+  // cleanup off-screen platforms
+  platforms=platforms.filter(p=>p.y<camY+H+100);
+  coins=coins.filter(c=>!c.collected&&c.y<camY+H+100);
+  // particles
+  for(let i=particles.length-1;i>=0;i--){
+    particles[i].x+=particles[i].dx;particles[i].y+=particles[i].dy;particles[i].life--;
+    if(particles[i].life<=0)particles.splice(i,1);
+  }
+  // fall off bottom
+  if(player.y>camY+H+50){
+    alive=false;
+    if(maxHeight>best){best=maxHeight;localStorage.setItem('jumper_best',best);document.getElementById('best').textContent=best}
+    document.getElementById('olMsg').textContent=`高度: ${maxHeight} | 分数: ${score}`;
+    document.getElementById('overlay').classList.add('show');
+  }
+  updateInfo();
+}
+
+function render(){
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
+  // background parallax
+  for(let i=0;i<30;i++){
+    const y=((i*50+camY*0.1)%H+H)%H;
+    ctx.fillStyle=`rgba(255,255,255,${0.05+i*0.005})`;
+    ctx.fillRect((i*97)%W,y,1,1);
+  }
+  ctx.save();ctx.translate(0,-camY);
+  // platforms
+  for(const p of platforms){
+    if(p.broken)continue;
+    if(p.type==='normal'){
+      ctx.fillStyle='#4a4';
+    }else if(p.type==='move'){
+      ctx.fillStyle='#48f';
+    }else{
+      ctx.fillStyle='#a44';
+    }
+    ctx.beginPath();ctx.roundRect(p.x,p.y,p.w,p.h,3);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.1)';
+    ctx.fillRect(p.x,p.y,p.w,3);
+  }
+  // coins
+  for(const c of coins){
+    if(c.collected)continue;
+    ctx.fillStyle='#ffd700';
+    ctx.beginPath();ctx.arc(c.x,c.y,6,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#aa8800';ctx.font='8px sans-serif';ctx.textAlign='center';
+    ctx.fillText('$',c.x,c.y+3);ctx.textAlign='left';
+  }
+  // player
+  if(alive){
+    // body
+    ctx.fillStyle='#5bf';
+    ctx.beginPath();ctx.roundRect(player.x,player.y,player.w,player.h,4);ctx.fill();
+    // head
+    ctx.fillStyle='#7df';
+    ctx.beginPath();ctx.roundRect(player.x+2,player.y-6,player.w-4,10,4);ctx.fill();
+    // eyes
+    ctx.fillStyle='#fff';
+    ctx.fillRect(player.x+6,player.y-4,4,4);
+    ctx.fillRect(player.x+player.w-10,player.y-4,4,4);
+    ctx.fillStyle='#000';
+    ctx.fillRect(player.x+7,player.y-3,2,2);
+    ctx.fillRect(player.x+player.w-9,player.y-3,2,2);
+    // cape
+    ctx.fillStyle='rgba(255,100,100,0.4)';
+    ctx.beginPath();ctx.moveTo(player.x+player.w/2,player.y+player.h);
+    ctx.lineTo(player.x+player.w/2+8,player.y+player.h+12);
+    ctx.lineTo(player.x+player.w/2-8,player.y+player.h+12);
+    ctx.fill();
+  }
+  // particles
+  for(const p of particles){
+    ctx.globalAlpha=p.life/20;ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  ctx.restore();
+  // height indicator
+  ctx.fillStyle='rgba(255,255,255,0.1)';ctx.font='bold 24px sans-serif';
+  ctx.fillText(maxHeight+'m',10,30);
+}
+
+function spawnParticles(x,y,color,n){
+  for(let i=0;i<n;i++)particles.push({x,y,dx:(Math.random()-0.5)*6,dy:(Math.random()-0.5)*6,life:20,color,r:Math.random()*3+1});
+}
+
+canvas.addEventListener('mousemove',e=>{
+  const rect=canvas.getBoundingClientRect();
+  player.x=(e.clientX-rect.left)*(W/rect.width)-player.w/2;
+});
+canvas.addEventListener('click',()=>{boostTimer=5});
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowLeft'||e.key==='a')player.vx=-6;
+  if(e.key==='ArrowRight'||e.key==='d')player.vx=6;
+  if(e.key===' '){e.preventDefault();boostTimer=5}
+});
+
+function updateInfo(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('height').textContent=maxHeight;
+}
+
+newGame();
+</script>
+</body>
+</html>

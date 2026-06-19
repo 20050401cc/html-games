@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎰 老虎机</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#ffd700;margin-bottom:12px}
+#machine{background:linear-gradient(180deg,#2a1a0a,#1a1005);border:3px solid #8b6914;border-radius:16px;padding:20px;box-shadow:0 0 40px rgba(139,105,20,0.3)}
+#reels{display:flex;gap:8px;margin-bottom:16px}
+.reel{width:80px;height:200px;background:#0a0a14;border:2px solid #3a3a2a;border-radius:8px;overflow:hidden;position:relative}
+.reel-inner{transition:transform 0.5s ease-out}
+.symbol{height:66px;display:flex;align-items:center;justify-content:center;font-size:36px}
+#info{display:flex;gap:24px;margin-bottom:16px;justify-content:center}
+#info .box{text-align:center;padding:6px 12px;background:#1a1a0e;border-radius:8px}
+#info .box .label{font-size:10px;color:#888}
+#info .box .val{font-size:20px;color:#ffd700;font-weight:bold}
+#controls{display:flex;gap:12px;justify-content:center;align-items:center}
+#spinBtn{padding:14px 40px;font-size:20px;background:linear-gradient(180deg,#e74c3c,#c0392b);color:#fff;border:2px solid #ff6b6b;border-radius:12px;cursor:pointer;font-weight:bold;transition:all .15s;box-shadow:0 4px 15px rgba(231,76,60,0.4)}
+#spinBtn:hover{transform:scale(1.05);box-shadow:0 6px 20px rgba(231,76,60,0.6)}
+#spinBtn:disabled{background:#333;border-color:#444;cursor:not-allowed;box-shadow:none}
+#bet{display:flex;gap:6px;align-items:center}
+#bet button{width:32px;height:32px;background:#1a1a2e;color:#ffd700;border:1px solid #3a3a2a;border-radius:6px;cursor:pointer;font-size:16px}
+#msg{margin-top:12px;font-size:16px;min-height:24px;text-align:center}
+#paytable{margin-top:16px;background:#12121e;border:1px solid #2a2a3e;border-radius:8px;padding:12px;font-size:12px;max-width:300px}
+.pay-row{display:flex;justify-content:space-between;padding:2px 0;color:#888}
+.pay-row .combo{color:#ffd700}
+</style>
+</head>
+<body>
+<h1>🎰 老虎机</h1>
+<div id="machine">
+  <div id="reels">
+    <div class="reel"><div class="reel-inner" id="reel0"></div></div>
+    <div class="reel"><div class="reel-inner" id="reel1"></div></div>
+    <div class="reel"><div class="reel-inner" id="reel2"></div></div>
+  </div>
+  <div id="info">
+    <div class="box"><div class="label">金币</div><div class="val" id="coins">100</div></div>
+    <div class="box"><div class="label">赌注</div><div class="val" id="betDisplay">10</div></div>
+    <div class="box"><div class="label">最高</div><div class="val" id="best">100</div></div>
+  </div>
+  <div id="controls">
+    <div id="bet">
+      <button onclick="changeBet(-10)">-</button>
+      <span id="betAmount">10</span>
+      <button onclick="changeBet(10)">+</button>
+    </div>
+    <button id="spinBtn" onclick="spin()">🎰 SPIN</button>
+  </div>
+  <div id="msg">祝你好运！</div>
+</div>
+<div id="paytable">
+  <div style="color:#ffd700;margin-bottom:4px">赔率表</div>
+  <div class="pay-row"><span class="combo">💎💎💎</span> <span>×100</span></div>
+  <div class="pay-row"><span class="combo">7️⃣7️⃣7️⃣</span> <span>×50</span></div>
+  <div class="pay-row"><span class="combo">🍒🍒🍒</span> <span>×20</span></div>
+  <div class="pay-row"><span class="combo">🍋🍋🍋</span> <span>×10</span></div>
+  <div class="pay-row"><span class="combo">🔔🔔🔔</span> <span>×8</span></div>
+  <div class="pay-row"><span class="combo">⭐⭐⭐</span> <span>×5</span></div>
+  <div class="pay-row"><span class="combo">任意两个相同</span> <span>×2</span></div>
+</div>
+<script>
+const SYMBOLS=['💎','7️⃣','🍒','🍋','🔔','⭐','🍊','🍇'];
+const PAYOUTS={'💎💎💎':100,'7️⃣7️⃣7️⃣':50,'🍒🍒🍒':20,'🍋🍋🍋':10,'🔔🔔🔔':8,'⭐⭐⭐':5};
+let coins=100,bet=10,spinning=false,best=100;
+
+function init(){
+  for(let i=0;i<3;i++){
+    const reel=document.getElementById('reel'+i);
+    reel.innerHTML=SYMBOLS.map(s=>`<div class="symbol">${s}</div>`).join('');
+  }
+  updateInfo();
+}
+
+function changeBet(delta){
+  bet=Math.max(10,Math.min(100,bet+delta));
+  document.getElementById('betDisplay').textContent=bet;
+  document.getElementById('betAmount').textContent=bet;
+}
+
+async function spin(){
+  if(spinning||coins<bet)return;
+  spinning=true;
+  document.getElementById('spinBtn').disabled=true;
+  coins-=bet;updateInfo();
+  // generate results
+  const results=[0,0,0].map(()=>Math.floor(Math.random()*SYMBOLS.length));
+  // animate reels
+  for(let i=0;i<3;i++){
+    const reel=document.getElementById('reel'+i);
+    const spins=3+i*2;
+    for(let s=0;s<spins;s++){
+      const offset=Math.floor(Math.random()*SYMBOLS.length);
+      reel.style.transform=`translateY(-${offset*66}px)`;
+      await sleep(80+s*20);
+    }
+    reel.style.transform=`translateY(-${results[i]*66}px)`;
+    await sleep(200);
+  }
+  // check win
+  const symbols=results.map(r=>SYMBOLS[r]);
+  const combo=symbols.join('');
+  let win=0,msg='';
+  if(PAYOUTS[combo]){
+    win=bet*PAYOUTS[combo];
+    msg=`🎉 ${combo} 赢了 ${win} 金币！`;
+  }else if(symbols[0]===symbols[1]||symbols[1]===symbols[2]||symbols[0]===symbols[2]){
+    win=bet*2;
+    msg=`✨ 两个匹配！赢了 ${win} 金币！`;
+  }else{
+    msg='😢 没中奖，再试试！';
+  }
+  coins+=win;
+  if(coins>best){best=coins;localStorage.setItem('slot_best',best)}
+  document.getElementById('msg').textContent=msg;
+  if(win>0){
+    document.getElementById('msg').style.color='#ffd700';
+    setTimeout(()=>document.getElementById('msg').style.color='',2000);
+  }
+  updateInfo();
+  spinning=false;
+  document.getElementById('spinBtn').disabled=false;
+  if(coins<bet&&coins<10){
+    document.getElementById('msg').textContent='💸 金币用光了！点击重置';
+    coins=100;updateInfo();
+  }
+}
+
+function updateInfo(){
+  document.getElementById('coins').textContent=coins;
+  document.getElementById('betDisplay').textContent=bet;
+  document.getElementById('betAmount').textContent=bet;
+  document.getElementById('best').textContent=best;
+}
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+
+init();
+</script>
+</body>
+</html>

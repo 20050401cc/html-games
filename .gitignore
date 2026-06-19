@@ -1,0 +1,17 @@
+# Exclude non-game files
+CLAUDE.md
+Claude-3p/
+Claude_Code_*.md
+_archive/
+_docs/
+_html/
+_images/
+_matlab/
+_reports_archive/
+_scripts/
+_thesis_archive/
+data/
+prompts/
+*.py
+*.md
+!games.html

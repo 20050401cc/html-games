@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐢 海龟绘图</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#d0d0e0}
+h1{font-size:28px;color:#5f5;margin-bottom:6px}
+canvas{border:2px solid #2a3a2a;border-radius:8px;box-shadow:0 0 30px rgba(85,255,85,0.1)}
+#controls{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+#controls button{padding:6px 14px;background:#1a2a1a;color:#5f5;border:1px solid #2a3a2a;border-radius:6px;cursor:pointer;font-size:12px}
+#colors{display:flex;gap:4px;margin-top:8px}
+.cbtn{width:20px;height:20px;border-radius:4px;cursor:pointer;border:2px solid transparent}
+.cbtn.active{border-color:#fff}
+#code{margin-top:8px}
+#code textarea{width:300px;height:100px;background:#12121e;color:#5f5;border:1px solid #2a3a2a;border-radius:6px;padding:8px;font-family:monospace;font-size:12px;resize:vertical}
+#code button{margin-top:4px;padding:6px 16px;background:#1a2a1a;color:#5f5;border:1px solid #2a3a2a;border-radius:6px;cursor:pointer;font-size:12px}
+#msg{margin-top:8px;font-size:12px;color:#888}
+</style>
+</head>
+<body>
+<h1>🐢 海龟绘图</h1>
+<canvas id="game"></canvas>
+<div id="controls">
+  <button onclick="forward(50)">前进50</button>
+  <button onclick="turnLeft()">左转45°</button>
+  <button onclick="turnRight()">右转45°</button>
+  <button onclick="togglePen()">🖊️ 抬笔/落笔</button>
+  <button onclick="clearCanvas()">🗑️ 清空</button>
+  <button onclick="resetTurtle()">🐢 重置</button>
+  <button onclick="drawStar()">⭐ 星形</button>
+  <button onclick="drawSpiral()">🌀 螺旋</button>
+  <button onclick="drawFlower()">🌸 花朵</button>
+</div>
+<div id="colors"></div>
+<div id="code">
+  <textarea id="cmds">repeat 36 [forward 100 right 10]</textarea>
+  <button onclick="runCode()">▶ 运行代码</button>
+</div>
+<div id="msg">支持命令: forward(fd) back(bk) left(lt) right(rt) penup pendown color repeat</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=500,H=500;
+canvas.width=W;canvas.height=H;
+
+const PALETTE=['#5f5','#f55','#55f','#ff5','#f5f','#5ff','#fa0','#a0f','#ffd700','#fff'];
+let turtle,penDown,currentColor,animQueue,animating;
+
+function init(){
+  resetTurtle();
+  renderColors();
+}
+
+function resetTurtle(){
+  turtle={x:W/2,y:H/2,angle:-90,penDown:true};
+  currentColor='#5f5';animQueue=[];animating=false;
+  clearCanvas();
+}
+
+function clearCanvas(){
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
+  renderTurtle();
+}
+
+function renderColors(){
+  const el=document.getElementById('colors');
+  el.innerHTML=PALETTE.map((c,i)=>`<div class="cbtn${c===currentColor?' active':''}" style="background:${c}" onclick="currentColor='${c}';renderColors()"></div>`).join('');
+}
+
+function forward(dist){
+  const rad=turtle.angle*Math.PI/180;
+  const nx=turtle.x+Math.cos(rad)*dist;
+  const ny=turtle.y+Math.sin(rad)*dist;
+  if(turtle.penDown){
+    ctx.strokeStyle=currentColor;ctx.lineWidth=2;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(turtle.x,turtle.y);ctx.lineTo(nx,ny);ctx.stroke();
+  }
+  turtle.x=nx;turtle.y=ny;
+  renderTurtle();
+}
+
+function back(dist){forward(-dist)}
+function turnLeft(){turtle.angle-=45;renderTurtle()}
+function turnRight(){turtle.angle+=45;renderTurtle()}
+function togglePen(){turtle.penDown=!turtle.penDown}
+
+function renderTurtle(){
+  // turtle indicator
+  ctx.fillStyle=turtle.penDown?'#5f5':'#f55';
+  ctx.beginPath();ctx.arc(turtle.x,turtle.y,4,0,Math.PI*2);ctx.fill();
+  // direction arrow
+  const rad=turtle.angle*Math.PI/180;
+  ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(turtle.x,turtle.y);
+  ctx.lineTo(turtle.x+Math.cos(rad)*15,turtle.y+Math.sin(rad)*15);ctx.stroke();
+}
+
+function drawStar(){
+  clearCanvas();resetTurtle();
+  for(let i=0;i<5;i++){forward(100);turnRight();turnRight();turnRight();forward(100);turnLeft()}
+}
+
+function drawSpiral(){
+  clearCanvas();resetTurtle();
+  for(let i=0;i<36;i++){forward(i*3);turnRight()}
+}
+
+function drawFlower(){
+  clearCanvas();resetTurtle();
+  const colors=['#f55','#ff5','#f5f','#5f5','#55f'];
+  for(let i=0;i<6;i++){
+    currentColor=colors[i%colors.length];
+    for(let j=0;j<6;j++){forward(30);turnRight()}
+    forward(60);turnRight();turnRight();
+    forward(60);turnRight();turnRight();
+    turnRight();
+  }
+  currentColor='#5f5';
+}
+
+async function runCode(){
+  const code=document.getElementById('cmds').value;
+  clearCanvas();resetTurtle();
+  const tokens=tokenize(code);
+  await executeTokens(tokens);
+}
+
+function tokenize(code){
+  return code.toLowerCase().replace(/\[/g,' [ ').replace(/\]/g,' ] ').split(/\s+/).filter(Boolean);
+}
+
+async function executeTokens(tokens){
+  let i=0;
+  while(i<tokens.length){
+    const t=tokens[i];
+    if(t==='forward'||t==='fd'){i++;forward(parseInt(tokens[i])||50)}
+    else if(t==='back'||t==='bk'){i++;back(parseInt(tokens[i])||50)}
+    else if(t==='left'||t==='lt'){const deg=parseInt(tokens[++i])||45;turtle.angle-=deg}
+    else if(t==='right'||t==='rt'){const deg=parseInt(tokens[++i])||45;turtle.angle+=deg}
+    else if(t==='penup'){turtle.penDown=false}
+    else if(t==='pendown'){turtle.penDown=true}
+    else if(t==='color'){i++;currentColor=tokens[i].startsWith('#')?tokens[i]:PALETTE[parseInt(tokens[i])%PALETTE.length]}
+    else if(t==='repeat'){
+      const count=parseInt(tokens[++i]);
+      i++; // skip [
+      const start=i;let depth=1;
+      while(depth>0){if(tokens[i]==='[')depth++;if(tokens[i]===']')depth--;if(depth>0)i++}
+      const body=tokens.slice(start,i);
+      for(let r=0;r<count;r++){await executeTokens(body);await sleep(20)}
+    }
+    i++;
+    renderTurtle();
+  }
+}
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+
+init();
+</script>
+</body>
+</html>

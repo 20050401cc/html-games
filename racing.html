@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🏎️ 极速赛车</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e0a;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#c8e0c8}
+h1{font-size:28px;color:#f80;margin-bottom:6px}
+#info{display:flex;gap:16px;margin-bottom:8px;font-size:13px}
+#info .val{color:#ffd700;font-weight:bold}
+canvas{border:2px solid #2a3a2a;border-radius:8px;box-shadow:0 0 30px rgba(255,136,0,0.1)}
+#controls{margin-top:10px;display:flex;gap:8px}
+#controls button{padding:6px 16px;background:#1a2a1a;color:#f80;border:1px solid #2a3a2a;border-radius:6px;cursor:pointer;font-size:12px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#overlay.show{display:flex}
+#overlay h2{font-size:32px;margin-bottom:8px}
+#overlay p{color:#aaa;margin-bottom:16px}
+#overlay button{padding:10px 30px;background:#f80;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🏎️ 极速赛车</h1>
+<div id="info">
+  <div>速度: <span class="val" id="speed">0</span> km/h</div>
+  <div>距离: <span class="val" id="distance">0</span>m</div>
+  <div>分数: <span class="val" id="score">0</span></div>
+  <div>最高: <span class="val" id="best">0</span></div>
+</div>
+<canvas id="game"></canvas>
+<div id="controls">
+  <button onclick="togglePause()">暂停</button>
+</div>
+<div id="overlay">
+  <h2 id="olTitle">💀 撞车了！</h2>
+  <p id="olMsg"></p>
+  <button onclick="init()">再来一次</button>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=400,H=600;
+canvas.width=W;canvas.height=H;
+
+const ROAD_W=240,LANE_W=ROAD_W/3,ROAD_X=(W-ROAD_W)/2;
+let car,obstacles,coins,particles,score,distance,speed,alive,paused,frame;
+let best=parseInt(localStorage.getItem('racing_best')||'0');
+document.getElementById('best').textContent=best;
+
+function init(){
+  car={x:W/2,y:H-100,w:30,h:50,lane:1,speed:0,maxSpeed:12,accel:0.08};
+  obstacles=[];coins=[];particles=[];
+  score=0;distance=0;speed=0;alive=true;paused=false;frame=0;
+  document.getElementById('overlay').classList.remove('show');
+  render();
+  requestAnimationFrame(loop);
+}
+
+function spawnObstacle(){
+  const lane=Math.floor(Math.random()*3);
+  const ox=ROAD_X+lane*LANE_W+LANE_W/2;
+  const types=['🚗','🚙','🚕','🚌','🏎️'];
+  obstacles.push({x:ox,y:-60,w:28,h:48,type:types[Math.floor(Math.random()*types.length)]});
+}
+
+function spawnCoin(){
+  const lane=Math.floor(Math.random()*3);
+  const cx=ROAD_X+lane*LANE_W+LANE_W/2;
+  coins.push({x:cx,y:-20,r:10,collected:false});
+}
+
+function spawnParticles(x,y,color='#f80'){
+  for(let i=0;i<5;i++){
+    particles.push({x,y,dx:(Math.random()-0.5)*4,dy:Math.random()*-3,life:20,color,r:2});
+  }
+}
+
+let lastTime=0;
+function loop(ts){
+  const dt=Math.min((ts-lastTime)/1000,0.033);lastTime=ts;
+  if(!paused&&alive){update();render()}
+  requestAnimationFrame(loop);
+}
+
+function update(){
+  frame++;
+  // acceleration
+  if(keys['ArrowUp']||keys['w'])car.speed=Math.min(car.speed+car.accel,car.maxSpeed);
+  else car.speed=Math.max(car.speed-car.accel*0.5,2);
+  // steering
+  if(keys['ArrowLeft']||keys['a'])car.x-=3+car.speed*0.3;
+  if(keys['ArrowRight']||keys['d'])car.x+=3+car.speed*0.3;
+  // keep on road
+  car.x=Math.max(ROAD_X+car.w/2,Math.min(ROAD_X+ROAD_W-car.w/2,car.x));
+  // speed affects score
+  speed=Math.floor(car.speed*30);
+  distance+=car.speed*0.1;
+  score=Math.floor(distance);
+  // spawn obstacles
+  if(frame%Math.max(20,60-Math.floor(distance/100)*3)===0)spawnObstacle();
+  if(frame%90===0)spawnCoin();
+  // move obstacles
+  for(let i=obstacles.length-1;i>=0;i--){
+    const o=obstacles[i];
+    o.y+=car.speed*1.5;
+    if(o.y>H+60){obstacles.splice(i,1);continue}
+    // collision
+    if(Math.abs(car.x-o.x)<(car.w+o.w)/2-4&&Math.abs(car.y-o.y)<(car.h+o.h)/2-4){
+      alive=false;
+      spawnParticles(car.x,car.y,'#f44');
+      if(score>best){best=score;localStorage.setItem('racing_best',best);document.getElementById('best').textContent=best}
+      document.getElementById('olMsg').textContent=`距离: ${Math.floor(distance)}m | 分数: ${score}`;
+      document.getElementById('overlay').classList.add('show');
+      return;
+    }
+  }
+  // coins
+  for(let i=coins.length-1;i>=0;i--){
+    const c=coins[i];
+    c.y+=car.speed*1.5;
+    if(c.y>H+20){coins.splice(i,1);continue}
+    if(!c.collected&&Math.abs(car.x-c.x)<25&&Math.abs(car.y-c.y)<30){
+      c.collected=true;score+=50;
+      spawnParticles(c.x,c.y,'#ffd700');
+      coins.splice(i,1);
+    }
+  }
+  // particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.dx;p.y+=p.dy;p.life--;
+    if(p.life<=0)particles.splice(i,1);
+  }
+  // exhaust
+  if(frame%3===0)spawnParticles(car.x,car.y+car.h/2,'#555');
+  updateInfo();
+}
+
+function render(){
+  // background
+  ctx.fillStyle='#1a2a1a';ctx.fillRect(0,0,W,H);
+  // road
+  ctx.fillStyle='#333';ctx.fillRect(ROAD_X,0,ROAD_W,H);
+  // road edges
+  ctx.strokeStyle='#fff';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(ROAD_X,0);ctx.lineTo(ROAD_X,H);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(ROAD_X+ROAD_W,0);ctx.lineTo(ROAD_X+ROAD_W,H);ctx.stroke();
+  // lane markings
+  const offset=(frame*car.speed*2)%40;
+  ctx.strokeStyle='#555';ctx.lineWidth=2;ctx.setLineDash([20,20]);
+  for(let l=1;l<3;l++){
+    ctx.beginPath();
+    ctx.moveTo(ROAD_X+l*LANE_W,-20+offset);
+    ctx.lineTo(ROAD_X+l*LANE_W,H+20);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // rumble strips
+  const rumbleOff=(frame*car.speed*2)%20;
+  ctx.fillStyle='#a33';
+  for(let y=-20+rumbleOff;y<H;y+=20){ctx.fillRect(ROAD_X-8,y,6,10);ctx.fillRect(ROAD_X+ROAD_W+2,y,6,10)}
+  // obstacles
+  for(const o of obstacles){
+    ctx.font='36px serif';ctx.textAlign='center';
+    ctx.fillText(o.type,o.x,o.y+12);
+    ctx.textAlign='left';
+  }
+  // coins
+  for(const c of coins){
+    if(c.collected)continue;
+    ctx.fillStyle='#ffd700';
+    ctx.beginPath();ctx.arc(c.x,c.y,c.r,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#aa8800';ctx.font='bold 12px sans-serif';ctx.textAlign='center';
+    ctx.fillText('$',c.x,c.y+4);ctx.textAlign='left';
+  }
+  // car
+  ctx.fillStyle='#f80';
+  ctx.beginPath();
+  ctx.moveTo(car.x-car.w/2,car.y+car.h/2);
+  ctx.lineTo(car.x-car.w/2+4,car.y-car.h/2+8);
+  ctx.lineTo(car.x-car.w/4,car.y-car.h/2);
+  ctx.lineTo(car.x+car.w/4,car.y-car.h/2);
+  ctx.lineTo(car.x+car.w/2-4,car.y-car.h/2+8);
+  ctx.lineTo(car.x+car.w/2,car.y+car.h/2);
+  ctx.fill();
+  // windshield
+  ctx.fillStyle='#5bf';
+  ctx.fillRect(car.x-8,car.y-12,16,10);
+  // wheels
+  ctx.fillStyle='#222';
+  ctx.fillRect(car.x-car.w/2-3,car.y-10,5,12);
+  ctx.fillRect(car.x+car.w/2-2,car.y-10,5,12);
+  ctx.fillRect(car.x-car.w/2-3,car.y+10,5,12);
+  ctx.fillRect(car.x+car.w/2-2,car.y+10,5,12);
+  // headlights
+  ctx.fillStyle='#ff0';
+  ctx.fillRect(car.x-10,car.y-car.h/2,4,4);
+  ctx.fillRect(car.x+6,car.y-car.h/2,4,4);
+  // particles
+  for(const p of particles){
+    ctx.globalAlpha=p.life/20;ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  // speed display
+  ctx.fillStyle='rgba(255,255,255,0.1)';
+  ctx.font='bold 48px sans-serif';ctx.textAlign='center';
+  ctx.fillText(speed,W/2,H/2);ctx.textAlign='left';
+}
+
+function updateInfo(){
+  document.getElementById('speed').textContent=speed;
+  document.getElementById('distance').textContent=Math.floor(distance);
+  document.getElementById('score').textContent=score;
+}
+
+let keys={};
+document.addEventListener('keydown',e=>{keys[e.key]=true;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))e.preventDefault()});
+document.addEventListener('keyup',e=>{keys[e.key]=false});
+function togglePause(){paused=!paused}
+
+init();
+</script>
+</body>
+</html>
